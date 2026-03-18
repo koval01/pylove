@@ -24,6 +24,18 @@ SHORT_TO_FULL: dict[str, str] = {
 KNOWN_FEATURES = frozenset(SHORT_TO_FULL.values())
 
 
+def _normalize_feature_name(name: str) -> str:
+    """Normalize API feature tokens into canonical feature names.
+
+    Lovense API sometimes returns short tokens like 'v'/'v1'/'r'. For longer
+    names (e.g. 'Vibrate', 'Vibrate1') we keep them as-is.
+    """
+    n = name.strip()
+    if len(n) <= 3:
+        return SHORT_TO_FULL.get(n.lower(), n)
+    return n
+
+
 def features_for_toy(toy: dict[str, Any]) -> list[str]:
     """
     Get ordered list of features (Vibrate1, Vibrate2, Rotate, etc.) for toy.
@@ -38,15 +50,18 @@ def features_for_toy(toy: dict[str, Any]) -> list[str]:
     short = toy.get("shortFunctionNames") or []
     seen: set[str] = set()
     result: list[str] = []
-    for name in full + [SHORT_TO_FULL.get(str(s).lower(), str(s)) for s in short]:
+    # Prefer explicit API function names, but normalize short tokens when
+    # Lovense returns only abbreviations.
+    for name in full + short:
         if not isinstance(name, str):
             continue
-        n = name.strip()
-        mapped = SHORT_TO_FULL.get(n.lower(), n) if len(n) <= 3 else n
+        mapped = _normalize_feature_name(name)
         if mapped in KNOWN_FEATURES and mapped not in seen:
             seen.add(mapped)
             result.append(mapped)
     if result:
+        # Edge/Diamo API quirk: sometimes returns only 'v'/'Vibrate' even
+        # though the device has two vibrate motors.
         if ("edge" in toy_type or "diamo" in toy_type) and result == ["Vibrate"]:
             return ["Vibrate1", "Vibrate2"]
         return result
