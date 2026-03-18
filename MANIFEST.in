@@ -1,0 +1,17 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include requirements.txt
+include version.py
+recursive-include lovensepy *.py
+include lovensepy/py.typed
+
+# Exclude files from .gitignore
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.egg-info
+global-exclude __pycache__/
+global-exclude /.venv/
+global-exclude .vscode/
+global-exclude .DS_Store
+global-exclude .env

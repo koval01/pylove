@@ -1,0 +1,20 @@
+# Python-related
+*.pyc
+*.pyo
+*.egg-info/
+__pycache__/
+
+# Virtual environment
+/.venv/
+
+# IDE related
+.vscode/
+
+# Other
+.DS_Store
+.env
+.pytest_cache/
+
+# Distribution / packaging
+build/
+dist/

@@ -1,0 +1,13 @@
+[MESSAGES CONTROL]
+# Design rules - API shape is dictated by Lovense protocol
+disable=
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-instance-attributes,
+    too-many-locals,
+    too-many-branches,
+    too-few-public-methods,
+    duplicate-code
+
+[FORMAT]
+max-line-length=100
