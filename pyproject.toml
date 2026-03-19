@@ -4,16 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lovensepy"
-version = "1.0.4"
+version = "1.0.5"
 description = "Python Lovense API client"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.27.0",
     "pydantic>=2.0.0",
     "websockets>=12.0",
     "hyperframe>=6.1.0",
+]
+keywords = ["lovense", "api", "iot", "teledildonics", "asyncio", "sdk"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 [project.optional-dependencies]
@@ -23,8 +33,14 @@ dev = [
     "ruff>=0.8.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/koval01/lovensepy"
+Repository = "https://github.com/koval01/lovensepy"
+Issues = "https://github.com/koval01/lovensepy/issues"
+Documentation = "https://github.com/koval01/lovensepy#readme"
+
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"
 line-length = 100
 src = ["lovensepy", "tests"]
 
