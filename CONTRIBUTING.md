@@ -14,8 +14,8 @@ Thank you for your interest in contributing to LovensePy! This document provides
 1. **Fork and clone the repository**
 
    ```bash
-   git clone https://github.com/YOUR_USERNAME/pylove.git
-   cd pylove
+   git clone https://github.com/YOUR_USERNAME/lovensepy.git
+   cd lovensepy
    ```
 
 2. **Create a virtual environment**
@@ -41,13 +41,13 @@ Thank you for your interest in contributing to LovensePy! This document provides
 
 ### Reporting Bugs
 
-- Use the [Bug Report](https://github.com/koval01/pylove/issues/new?template=bug_report.md) template
+- Use the [Bug Report](https://github.com/koval01/lovensepy/issues/new?template=bug_report.md) template
 - Include steps to reproduce, expected vs actual behavior, and environment details
 - For integration tests, mention which Lovense API (LAN, Server, Socket, Toy Events) you're using
 
 ### Suggesting Features
 
-- Use the [Feature Request](https://github.com/koval01/pylove/issues/new?template=feature_request.md) template
+- Use the [Feature Request](https://github.com/koval01/lovensepy/issues/new?template=feature_request.md) template
 - Describe the use case and how it fits with the existing API design
 
 ### Pull Requests

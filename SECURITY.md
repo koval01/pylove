@@ -14,7 +14,7 @@ If you discover a security vulnerability in LovensePy, please report it responsi
 
 Instead, please report by:
 
-1. **Opening a private security advisory**: Go to the [Security](https://github.com/koval01/pylove/security/advisories/new) tab → "Report a vulnerability", or
+1. **Opening a private security advisory**: Go to the [Security](https://github.com/koval01/lovensepy/security/advisories/new) tab → "Report a vulnerability", or
 2. **Contacting the maintainer**: Use the contact information in the repository owner's GitHub profile.
 
 Please include as much of the following as possible:

@@ -64,8 +64,6 @@ Before using LovensePy, ensure you have:
 pip install lovensepy
 ```
 
-Note: the GitHub repository is named `pylove`, but the published package and import name is `lovensepy`.
-
 Dependencies: `httpx`, `pydantic`, `websockets`
 
 ---
