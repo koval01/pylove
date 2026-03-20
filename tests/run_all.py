@@ -25,6 +25,7 @@ PHASES: tuple[Phase, ...] = (
     Phase("Unit", "tests/test_unit.py"),
     Phase("Async transports/client unit", "tests/test_async_clients.py"),
     Phase("Socket client unit", "tests/test_socket_client_unit.py"),
+    Phase("Home Assistant MQTT unit", "tests/test_home_assistant_mqtt_unit.py"),
     Phase("LAN integration", "tests/test_local.py", ("-s",)),
     Phase("Toy events integration", "tests/test_toy_events.py", ("-s",)),
     Phase("Socket integration", "tests/test_socket.py", ("-s",)),

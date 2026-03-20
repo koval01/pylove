@@ -148,7 +148,14 @@ class ToyEventsClient:
         if event_type == "event-closed":
             self._access_granted = False
         if self._on_event:
-            payload = data.get("data", data)
+            # Official payloads often put ``toyId`` on the root and details inside ``data``
+            # (e.g. battery-changed: root toyId + data.value). Merge so callbacks see toyId.
+            inner = data.get("data", data)
+            if isinstance(inner, dict) and "toyId" in data:
+                tid = data.get("toyId")
+                if tid is not None and "toyId" not in inner and "id" not in inner:
+                    inner = {**inner, "toyId": tid}
+            payload = inner
             cb = self._on_event(event_type, payload)
             if asyncio.iscoroutine(cb):
                 await cb

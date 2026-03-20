@@ -17,11 +17,13 @@ Python client for the **Lovense API**. Supports Standard API (LAN & Server), Sta
   - [Server API + QR Pairing](#server-api--qr-pairing-tutorial)
   - [Socket API](#socket-api-tutorial)
   - [Toy Events](#toy-events-tutorial)
+  - [Home Assistant MQTT](#home-assistant-mqtt-tutorial)
 - [API Reference](#api-reference)
   - [LANClient](#lanclient)
   - [ServerClient](#serverclient)
   - [SocketAPIClient](#socketapiclient)
   - [ToyEventsClient](#toyeventsclient)
+  - [HAMqttBridge](#hamqttbridge)
   - [Pattern Players](#pattern-players)
   - [Utilities](#utilities)
 - [Appendix](#appendix)
@@ -43,6 +45,7 @@ Python client for the **Lovense API**. Supports Standard API (LAN & Server), Sta
 - **Standard API Server**: Function, Pattern, Preset via Lovense cloud; `get_qr_code` for QR pairing
 - **Standard Socket API**: getToken, getSocketUrl, WebSocket client for QR flow and remote control
 - **Toy Events API**: Real-time events (toy-list, button-down, function-strength-changed, etc.)
+- **Home Assistant MQTT bridge** (optional): MQTT Discovery + control via local Game Mode (`pip install 'lovensepy[mqtt]'`)
 
 ---
 
@@ -64,7 +67,13 @@ Before using LovensePy, ensure you have:
 pip install lovensepy
 ```
 
-Dependencies: `httpx`, `pydantic`, `websockets`
+MQTT / Home Assistant bridge (installs `paho-mqtt`):
+
+```bash
+pip install 'lovensepy[mqtt]'
+```
+
+Dependencies: `httpx`, `pydantic`, `websockets`. Optional: `paho-mqtt` (via `[mqtt]`).
 
 ---
 
@@ -103,6 +112,7 @@ client.function_request({Actions.VIBRATE: 10}, time=3)
 | Socket / local | `SocketAPIClient(use_local_commands=True)` | same + LAN | Commands via HTTPS to device |
 | Socket / local only | `LANClient` | IP + port only | No token, no WebSocket |
 | Events API | `ToyEventsClient` | access (appName) | Port 20011. Lovense Remote only |
+| Home Assistant | `HAMqttBridge` | MQTT broker + Game Mode LAN IP | MQTT Discovery; commands → `AsyncLANClient`; state via Toy Events |
 
 **Flow:** Standard local → HTTP/HTTPS to device. Standard server → HTTPS to Lovense cloud. Socket → WebSocket to cloud (or HTTPS to device when `use_local_commands=True`). Events → WebSocket to device.
 
@@ -115,11 +125,13 @@ flowchart TB
         ServerClient
         SocketAPIClient
         ToyEventsClient
+        HAMqttBridge
     end
 
     subgraph Local [Local Network]
         RemoteApp[Lovense Remote App]
         Toy[Lovense Toy]
+        MQTTBroker[MQTT Broker]
     end
 
     subgraph Cloud [Lovense Cloud]
@@ -137,6 +149,9 @@ flowchart TB
     LovenseServer --> RemoteApp
 
     ToyEventsClient -->|"WebSocket"| RemoteApp
+
+    HAMqttBridge -->|"HTTP + WebSocket"| RemoteApp
+    HAMqttBridge <-->|"MQTT"| MQTTBroker
 ```
 
 ---
@@ -385,6 +400,63 @@ asyncio.run(main())
 **Step 4:** User grants access when Lovense Remote prompts "Allow [My App] to access?"
 
 **Step 5:** Receive events: `toy-list`, `button-down`, `function-strength-changed`, `shake`, etc.
+
+---
+
+### Home Assistant MQTT Tutorial
+
+Use a small **bridge process** on your network: it talks to Lovense **Game Mode** (HTTP + Toy Events WebSocket) and exposes **MQTT Discovery** entities to Home Assistant.
+
+**Requirements**
+
+- MQTT broker reachable from the machine running the bridge (e.g. Mosquitto on `192.168.1.2:1883`)
+- Home Assistant **MQTT** integration configured with the same broker
+- Lovense **Remote** with **Game Mode** enabled (not Lovense Connect for Toy Events)
+- Install: `pip install 'lovensepy[mqtt]'`
+
+**Step 1:** Set environment variables (example for your broker):
+
+```bash
+export LOVENSE_LAN_IP=192.168.1.100   # host running Lovense Remote (Game Mode)
+export MQTT_HOST=192.168.1.2
+export MQTT_PORT=1883
+# optional: MQTT_USER, MQTT_PASSWORD, MQTT_TOPIC_PREFIX=lovensepy
+```
+
+**Step 2:** Run the example bridge:
+
+```bash
+python examples/ha_mqtt_bridge.py
+```
+
+**Step 3:** In Home Assistant, open **Settings → Devices & Services → MQTT**. New devices should appear under MQTT discovery (per-toy numbers for each supported motor, **Stop** button, **Preset** select, **Battery** sensor).
+
+**Step 4:** Grant Toy Events access when Lovense Remote prompts (same as [Toy Events](#toy-events-tutorial)).
+
+**Topic layout** (default prefix `lovensepy`): command topics are `lovensepy/<safe_toy_id>/<feature>/set` (e.g. `vibrate`, `rotate`, `preset`, `stop`). Bridge availability is published retained on `lovensepy/bridge/status` (`online` / `offline`).
+
+![Home Assistant dashboard: Lovense toys via MQTT Discovery](./docs/images/ha_mqtt_dashboard.png)
+
+**Programmatic use:**
+
+```python
+import asyncio
+from lovensepy import HAMqttBridge
+
+async def main():
+    bridge = HAMqttBridge(
+        "192.168.1.2",
+        1883,
+        lan_ip="192.168.1.100",
+        mqtt_username=None,
+        mqtt_password=None,
+    )
+    await bridge.start()
+    # ... keep running ...
+    await bridge.stop()
+
+asyncio.run(main())
+```
 
 ---
 
@@ -722,6 +794,51 @@ ToyEventsClient(
 
 ---
 
+### HAMqttBridge
+
+MQTT bridge for **Home Assistant** (MQTT Discovery). Uses `AsyncLANClient` for commands and `ToyEventsClient` for battery / strength updates. **Requires** optional dependency `paho-mqtt` (`pip install 'lovensepy[mqtt]'`).
+
+Import: `from lovensepy import HAMqttBridge` (lazy-loaded) or `from lovensepy.integrations.mqtt import HAMqttBridge`.
+
+#### Constructor
+
+```python
+HAMqttBridge(
+    mqtt_host: str,
+    mqtt_port: int = 1883,
+    *,
+    lan_ip: str,
+    lan_port: int = 20011,
+    toy_events_port: int | None = None,
+    app_name: str = "lovensepy_ha",
+    topic_prefix: str = "lovensepy",
+    mqtt_username: str | None = None,
+    mqtt_password: str | None = None,
+    mqtt_client_id: str | None = None,
+    refresh_interval: float = 45.0,
+    use_https: bool = False,
+    use_toy_events: bool = True,
+)
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `mqtt_host`, `mqtt_port` | MQTT broker (Home Assistant integration uses the same broker). |
+| `lan_ip`, `lan_port` | Lovense Remote Game Mode HTTP API (`/command`). |
+| `toy_events_port` | Toy Events WebSocket (default: same as `lan_port`, usually 20011). |
+| `topic_prefix` | Base prefix for state/command topics and discovery device grouping. |
+| `use_toy_events` | If False, only polling `GetToys` is used (no live battery/strength). |
+
+#### Methods and properties
+
+| Method / property | Description |
+|-------------------|-------------|
+| `async start()` | Connect MQTT, subscribe, publish discovery, start refresh + Toy Events tasks. |
+| `async stop()` | Cancel tasks, publish `offline`, disconnect. |
+| `availability_topic` | Retained bridge status topic (e.g. `lovensepy/bridge/status`). |
+
+---
+
 ### Pattern Players
 
 High-level API for sine waves and combo patterns.
@@ -891,7 +1008,7 @@ sequenceDiagram
 
 ### Architecture
 
-- **Clients**: LANClient, ServerClient, SocketAPIClient, ToyEventsClient — command building, protocols
+- **Clients**: LANClient, ServerClient, SocketAPIClient, ToyEventsClient, HAMqttBridge — command building, protocols, MQTT bridge
 - **Transport**: HttpTransport (POST JSON), WsTransport (WebSocket)
 - **Security**: Certificate fingerprint verification for HTTPS (port 30011/30011) when `verify_ssl=False`
 
@@ -912,6 +1029,7 @@ For local HTTPS (ports 30011/30011), lovensepy verifies the Lovense certificate 
 | `examples/server_api.py` | Server API with token and uid |
 | `examples/socket_api_full.py` | Socket API with QR flow and command sending |
 | `examples/toy_events_full.py` | Toy Events — receive real-time events |
+| `examples/ha_mqtt_bridge.py` | Home Assistant MQTT bridge (Game Mode + broker) |
 
 Run with env vars, e.g. `LOVENSE_LAN_IP=192.168.1.100 python examples/lan_game_mode.py`
 
@@ -930,6 +1048,7 @@ pip install -e ".[dev]"
 Runs all test phases in strict order:
 - unit
 - async transport/socket-client unit
+- Home Assistant MQTT unit
 - LAN integration (patterns/commands/local control)
 - Toy Events integration
 - Socket integration (server + by-local flow)
@@ -949,6 +1068,7 @@ python -m tests.run_all --stop-on-fail
 
 ```bash
 pytest tests/test_unit.py -v
+pytest tests/test_home_assistant_mqtt_unit.py -v
 ```
 
 #### Integration tests
@@ -964,6 +1084,7 @@ Integration tests require Lovense hardware and/or a developer token. Set environ
 | `test_socket.py` | Socket / server | `LOVENSE_DEV_TOKEN`, `LOVENSE_UID`, `LOVENSE_PLATFORM` |
 | `test_socket.py::test_by_local` | Socket / local | Same as server + device on same LAN |
 | `test_toy_events.py` | Toy Events | `LOVENSE_LAN_IP`, `LOVENSE_TOY_EVENTS_PORT` (20011) |
+| `test_home_assistant_mqtt_unit.py` | MQTT bridge (unit) | None — uses fakes, requires `paho-mqtt` (included in `.[dev]`) |
 
 **Example env setup:**
 
@@ -991,6 +1112,7 @@ pytest tests/test_toy_events.py -v -s
 
 ## Links
 
+- [Home Assistant MQTT Discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery)
 - [Lovense Standard API](https://developer.lovense.com/docs/standard-solutions/standard-api.html)
 - [Lovense Socket API](https://developer.lovense.com/docs/standard-solutions/socket-api.html)
 - [Toy Events API](https://developer.lovense.com/docs/standard-solutions/toy-events-api.html)

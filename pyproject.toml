@@ -15,7 +15,7 @@ dependencies = [
     "websockets>=12.0",
     "hyperframe>=6.1.0",
 ]
-keywords = ["lovense", "api", "iot", "teledildonics", "asyncio", "sdk"]
+keywords = ["lovense", "api", "iot", "teledildonics", "asyncio", "sdk", "mqtt", "home-assistant"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -27,10 +27,14 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+mqtt = [
+    "paho-mqtt>=2.1.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.8.0",
+    "paho-mqtt>=2.1.0",
 ]
 
 [project.urls]
