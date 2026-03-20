@@ -1109,6 +1109,14 @@ pytest tests/test_unit.py -v
 pytest tests/test_home_assistant_mqtt_unit.py -v
 ```
 
+#### Semgrep (SAST, same as CI)
+
+```bash
+semgrep scan --config auto lovensepy --error
+```
+
+`semgrep` is included in the `.[dev]` extra.
+
 #### Integration tests
 
 Integration tests require Lovense hardware and/or a developer token. Set environment variables for the test mode you use, then run the corresponding test file.

@@ -199,7 +199,8 @@ def test_handle_command_keeps_other_vector_levels():
     async def _run():
         b, lan, _pub = _make_partial_bridge()
         b._toys = {
-            "t1": {"id": "real1", "name": "Test", "toyType": "dolce"},
+            # Edge/Diamo-style dual vibrate (dolce falls back to ["Vibrate"] only).
+            "t1": {"id": "real1", "name": "Test", "toyType": "edge"},
         }
         b._feature_levels["t1"] = {"Vibrate1": 9, "Vibrate2": 4}
         await b._handle_command_topic("lovensepy/t1/vibrate1/set", b"11")

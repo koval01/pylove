@@ -36,7 +36,7 @@ jobs:
         run: bandit -r lovensepy -f txt
 
       - name: Run semgrep
-        run: docker run --rm -v "${{ github.workspace }}:/src" semgrep/semgrep:latest semgrep scan --config auto /src/lovensepy --error
+        run: semgrep scan --config auto lovensepy --error
 
       - name: Check dependencies for vulnerabilities
         run: pip-audit
