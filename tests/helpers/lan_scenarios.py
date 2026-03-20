@@ -11,7 +11,8 @@ import math
 import os
 import secrets
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from lovensepy import LANClient, SyncPatternPlayer, features_for_toy
 from lovensepy._models import GetToysResponse
@@ -157,9 +158,7 @@ def run_sync_pattern_player_demo(
             feats = features_for_toy(t)[:2]
             targets_2m = [(tid, f) for f in feats]
             name = t.get("name") or t.get("nickName") or tid
-            log_fn(
-                f"\n>>> 2. Two motors together ({name}: {feats}) — {combo_duration_sec}s:"
-            )
+            log_fn(f"\n>>> 2. Two motors together ({name}: {feats}) — {combo_duration_sec}s:")
             player.play_combo(targets_2m, duration_sec=combo_duration_sec)
             time.sleep(0.5)
 
@@ -194,9 +193,7 @@ def run_lan_function_demo(
     _log_toy_inventory(toys, header=f"\n>>> Detected {len(toys)} toy(s):", log_fn=log_fn)
 
     interval = feature_duration_sec / num_steps
-    log_fn(
-        f"\n>>> 1. Per-motor sine wave ({feature_duration_sec}s each) — {len(sequence)} steps:"
-    )
+    log_fn(f"\n>>> 1. Per-motor sine wave ({feature_duration_sec}s each) — {len(sequence)} steps:")
     last_toy_id: str | None = None
     for idx, (tid, feat) in enumerate(sequence):
         name = toys[tid].get("name") or toys[tid].get("nickName") or tid
@@ -227,7 +224,8 @@ def run_lan_function_demo(
             targets_2m = [(tid, f) for f in feats]
             name = t.get("name") or t.get("nickName") or tid
             log_fn(
-                f"\n>>> 2. Two motors together ({name}: {feats}) — {combo_duration_sec}s, random phases:"
+                "\n>>> 2. Two motors together "
+                f"({name}: {feats}) — {combo_duration_sec}s, random phases:"
             )
             phases = {t: rng.uniform(0, 2 * math.pi) for t in targets_2m}
             for i in range(num_steps + 1):
@@ -265,7 +263,9 @@ def run_lan_function_demo(
                         ),
                     )
                     stop_prev = tid != last_tid
-                    client.function_request({feat: level}, time=0, toy_id=tid, stop_previous=stop_prev)
+                    client.function_request(
+                        {feat: level}, time=0, toy_id=tid, stop_previous=stop_prev
+                    )
                     last_tid = tid
                 time.sleep(combo_duration_sec / num_steps)
             time.sleep(0.15)
@@ -305,4 +305,3 @@ def run_lan_function_demo(
     for tid in toys:
         client.function_request(_stop_all_features(toys, tid), time=0, toy_id=tid)
     log_fn(">>> Done.")
-

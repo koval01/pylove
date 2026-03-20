@@ -5,16 +5,13 @@ Shared test utilities to keep integration tests compact.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeVar
 
 import pytest
 
 from lovensepy import LovenseError
 
-T = TypeVar("T")
 
-
-def call_or_skip(func: Callable[[], T]) -> T:
+def call_or_skip[T](func: Callable[[], T]) -> T:
     """Call API function and skip the test on transient network errors."""
     try:
         return func()

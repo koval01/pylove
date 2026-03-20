@@ -5,8 +5,9 @@ Socket API session orchestration helpers for integration tests.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
-from typing import Any, AsyncIterator, Callable
+from typing import Any
 
 from lovensepy import SocketAPIClient
 from lovensepy.socket_api.events import BASICAPI_GET_QRCODE_TC, BASICAPI_UPDATE_DEVICE_INFO_TC

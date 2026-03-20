@@ -50,16 +50,19 @@ def mqtt_safe_toy_id(toy_id: str, max_len: int = 64) -> str:
 
 
 def bridge_status_topic(prefix: str) -> str:
+    """Bridge online/offline status topic."""
     p = prefix.strip("/")
     return f"{p}/bridge/status"
 
 
 def command_topic(prefix: str, safe_toy_id: str, feature_segment: str) -> str:
+    """Topic that Home Assistant publishes commands to."""
     p = prefix.strip("/")
     return f"{p}/{safe_toy_id}/{feature_segment}/set"
 
 
 def state_topic(prefix: str, safe_toy_id: str, feature_segment: str) -> str:
+    """Topic where bridge publishes current feature state."""
     p = prefix.strip("/")
     return f"{p}/{safe_toy_id}/{feature_segment}/state"
 
@@ -80,5 +83,6 @@ def topic_segment_to_action_name(segment: str) -> str | None:
 
 
 def subscribe_wildcard(prefix: str) -> str:
+    """Wildcard subscription covering all `{toy}/{feature}/set` command topics."""
     p = prefix.strip("/")
     return f"{p}/+/+/set"

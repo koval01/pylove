@@ -170,7 +170,9 @@ class TestServerClient:
             print(f"    {name} ({tid}): {feats}")
             for feat in feats:
                 action = {feat: 12}
-                resp = call_or_skip(lambda: client.function_request(action, time=DURATION_SEC, toy_id=tid))
+                resp = call_or_skip(
+                    lambda: client.function_request(action, time=DURATION_SEC, toy_id=tid)
+                )
                 if is_success_response(resp):
                     print(f"      -> {feat}:12 for {DURATION_SEC}s OK")
                 else:

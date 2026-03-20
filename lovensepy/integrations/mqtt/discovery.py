@@ -33,6 +33,7 @@ def discovery_object_id(prefix: str, safe_toy_id: str, kind: str) -> str:
 
 
 def re_safe_prefix(prefix: str) -> str:
+    """Convert topic prefix into a stable discovery-safe object id prefix."""
     return prefix.strip("/").replace("/", "_").replace(" ", "_")
 
 
@@ -51,12 +52,7 @@ def build_discovery_payloads(
     if not toy_id:
         return []
     safe = mqtt_safe_toy_id(toy_id)
-    display = (
-        toy_dict.get("nickName")
-        or toy_dict.get("name")
-        or toy_dict.get("toyType")
-        or toy_id
-    )
+    display = toy_dict.get("nickName") or toy_dict.get("name") or toy_dict.get("toyType") or toy_id
     model = str(toy_dict.get("toyType") or toy_dict.get("name") or "")
 
     device: dict[str, Any] = {
@@ -144,4 +140,5 @@ def build_discovery_payloads(
 
 
 def default_availability_topic(topic_prefix: str) -> str:
+    """Return default bridge availability topic for Home Assistant entities."""
     return bridge_status_topic(topic_prefix)

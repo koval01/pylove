@@ -8,7 +8,8 @@ the connection/receive orchestration.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from lovensepy import ToyEventsClient
 
@@ -65,4 +66,3 @@ async def collect_toy_events(
         pass
 
     return events, access_granted, connect_error
-

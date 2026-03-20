@@ -46,7 +46,9 @@ __version__ = package_version()
 
 def __getattr__(name: str) -> Any:
     if name == "HAMqttBridge":
-        from lovensepy.integrations.mqtt.ha_bridge import HAMqttBridge
+        from lovensepy.integrations.mqtt.ha_bridge import (  # pylint: disable=import-outside-toplevel
+            HAMqttBridge,
+        )
 
         return HAMqttBridge
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -76,5 +78,5 @@ __all__ = [
     "LovenseDeviceOfflineError",
     "LovenseTimeoutError",
     "LovenseResponseParseError",
-    "HAMqttBridge",
+    "HAMqttBridge",  # pylint: disable=undefined-all-variable
 ]

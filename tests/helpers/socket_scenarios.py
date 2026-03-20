@@ -9,7 +9,8 @@ from __future__ import annotations
 import asyncio
 import math
 import secrets
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from lovensepy import SocketAPIClient, features_for_toy
 
@@ -167,7 +168,9 @@ async def _play_combo_phases(
         return
 
     toy_list = list(toys.items())
-    two_motor_toys = [(toy_id, toy) for toy_id, toy in toys.items() if len(features_for_toy(toy)) >= 2]
+    two_motor_toys = [
+        (toy_id, toy) for toy_id, toy in toys.items() if len(features_for_toy(toy)) >= 2
+    ]
     if two_motor_toys:
         toy_id, toy = two_motor_toys[0]
         features = features_for_toy(toy)[:2]
@@ -187,8 +190,10 @@ async def _play_combo_phases(
     if len(toy_list) >= 2:
         (toy1_id, toy1), (toy2_id, toy2) = toy_list[:2]
         targets = [(toy1_id, features_for_toy(toy1)[0]), (toy2_id, features_for_toy(toy2)[0])]
+        toy1_name = toy1.get("name") or toy1_id
+        toy2_name = toy2.get("name") or toy2_id
         log_fn(
-            f"\n>>> 3. Two toys together ({toy1.get('name') or toy1_id}, {toy2.get('name') or toy2_id}) — "
+            f"\n>>> 3. Two toys together ({toy1_name}, {toy2_name}) — "
             f"{combo_duration_sec}s, random phases:"
         )
         await _play_sine_combo(
@@ -247,4 +252,3 @@ async def run_socket_function_demo(
             toy=toy_id,
         )
     log_fn(">>> Done.")
-
