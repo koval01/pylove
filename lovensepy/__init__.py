@@ -12,6 +12,7 @@ High-level: SyncPatternPlayer, AsyncPatternPlayer for ready-made patterns.
 """
 
 from ._constants import Actions, Presets
+from ._http_identity import package_version
 from .exceptions import (
     LovenseAuthError,
     LovenseDeviceOfflineError,
@@ -37,7 +38,10 @@ from .standard import (
 from .toy_events import ToyEventsClient
 from .toy_utils import features_for_toy, stop_actions
 
+__version__ = package_version()
+
 __all__ = [
+    "__version__",
     "Actions",
     "Presets",
     "LANClient",

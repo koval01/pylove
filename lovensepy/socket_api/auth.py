@@ -7,6 +7,8 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from .._http_identity import default_http_headers
+
 # Public Lovense API endpoints (not secrets)
 GET_TOKEN_URL = "https://api.lovense-api.com/api/basicApi/getToken"  # nosec B105
 GET_SOCKET_URL = "https://api.lovense-api.com/api/basicApi/getSocketUrl"  # nosec B105
@@ -45,7 +47,7 @@ def get_token(
     if utoken is not None:
         payload["utoken"] = utoken
 
-    with httpx.Client(timeout=timeout) as client:
+    with httpx.Client(timeout=timeout, headers=default_http_headers()) as client:
         resp = client.post(GET_TOKEN_URL, json=payload)
         resp.raise_for_status()
         data = resp.json()
@@ -77,7 +79,7 @@ def get_socket_url(
         httpx.HTTPError: On network errors
     """
     payload = {"authToken": auth_token, "platform": platform}
-    with httpx.Client(timeout=timeout) as client:
+    with httpx.Client(timeout=timeout, headers=default_http_headers()) as client:
         resp = client.post(GET_SOCKET_URL, json=payload)
         resp.raise_for_status()
         data = resp.json()

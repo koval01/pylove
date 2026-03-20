@@ -17,6 +17,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from .._constants import FUNCTION_RANGES, SERVER_ERROR_CODES, Actions, Presets
+from .._http_identity import default_http_headers
 from .._models import CommandResponse
 from ..exceptions import LovenseError, LovenseResponseParseError
 from ..transport import HttpTransport
@@ -76,7 +77,7 @@ def get_qr_code(
         payload["utoken"] = hashlib.md5(uid.encode(), usedforsecurity=False).hexdigest()
 
     form = {k: str(v) for k, v in payload.items()}
-    with httpx.Client(timeout=timeout) as client:
+    with httpx.Client(timeout=timeout, headers=default_http_headers()) as client:
         resp = client.post(GET_QR_CODE_URL, data=form)
         resp.raise_for_status()
         data = resp.json()

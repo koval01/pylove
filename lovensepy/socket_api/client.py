@@ -11,6 +11,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .._http_identity import user_agent_string
 from ..exceptions import LovenseDeviceOfflineError, LovenseError
 from ..standard.async_lan import AsyncLANClient
 from ..transport import WsTransport
@@ -48,7 +49,7 @@ class SocketAPIClient:
             ws_url,
             headers={
                 "Origin": "http://localhost:3000",
-                "User-Agent": "lovensepy/1.0",
+                "User-Agent": user_agent_string(),
             },
             open_timeout=30,
         )

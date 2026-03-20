@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from .._http_identity import merge_http_headers
 from ..exceptions import (
     LovenseAuthError,
     LovenseDeviceOfflineError,
@@ -36,7 +37,7 @@ class HttpTransport:
         verify: bool = True,
     ) -> None:
         self.endpoint = endpoint
-        self.headers = headers or {}
+        self.headers = merge_http_headers(headers)
         self.timeout = timeout
         self.verify = verify
 

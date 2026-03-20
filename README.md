@@ -925,6 +925,26 @@ Run with env vars, e.g. `LOVENSE_LAN_IP=192.168.1.100 python examples/lan_game_m
 pip install -e ".[dev]"
 ```
 
+#### Full library validation (single command)
+
+Runs all test phases in strict order:
+- unit
+- async transport/socket-client unit
+- LAN integration (patterns/commands/local control)
+- Toy Events integration
+- Socket integration (server + by-local flow)
+- Standard Server integration
+
+```bash
+python -m tests.run_all
+```
+
+Optional:
+
+```bash
+python -m tests.run_all --stop-on-fail
+```
+
 #### Unit tests (no devices)
 
 ```bash
@@ -939,11 +959,10 @@ Integration tests require Lovense hardware and/or a developer token. Set environ
 
 | Test file | Mode | Required env vars |
 |-----------|------|-------------------|
-| `test_standard_local.py` | Standard / local | `LOVENSE_LAN_IP`, `LOVENSE_LAN_PORT` (20011 Remote, 34567 Connect) |
+| `test_local.py` | Standard / local | `LOVENSE_LAN_IP`, `LOVENSE_LAN_PORT` (20011 Remote, 34567 Connect) |
 | `test_standard_server.py` | Standard / server | `LOVENSE_DEV_TOKEN`, `LOVENSE_UID` — or `LOVENSE_QR_PAIRING=1` + ngrok |
-| `test_socket_server.py` | Socket / server | `LOVENSE_DEV_TOKEN`, `LOVENSE_UID`, `LOVENSE_PLATFORM` |
-| `test_socket_server.py::test_by_local` | Socket / local | Same as server + device on same LAN |
-| `test_socket_local.py` | Socket / local only | `LOVENSE_LAN_IP`, `LOVENSE_LAN_PORT` |
+| `test_socket.py` | Socket / server | `LOVENSE_DEV_TOKEN`, `LOVENSE_UID`, `LOVENSE_PLATFORM` |
+| `test_socket.py::test_by_local` | Socket / local | Same as server + device on same LAN |
 | `test_toy_events.py` | Toy Events | `LOVENSE_LAN_IP`, `LOVENSE_TOY_EVENTS_PORT` (20011) |
 
 **Example env setup:**
@@ -962,10 +981,9 @@ export LOVENSE_CALLBACK_PORT=8765      # ngrok or cloudflared
 **Run integration tests:**
 
 ```bash
-pytest tests/test_standard_local.py -v -s
+pytest tests/test_local.py -v -s
 pytest tests/test_standard_server.py -v -s
-pytest tests/test_socket_server.py -v -s
-pytest tests/test_socket_local.py -v -s
+pytest tests/test_socket.py -v -s
 pytest tests/test_toy_events.py -v -s
 ```
 

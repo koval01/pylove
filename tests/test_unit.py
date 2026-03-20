@@ -2,6 +2,9 @@
 Unit tests (no Lovense connection required).
 """
 
+import tomllib
+from pathlib import Path
+
 from lovensepy import Actions, LANClient, Presets, ServerClient
 from lovensepy._constants import ERROR_CODES, FUNCTION_RANGES
 
@@ -37,6 +40,8 @@ def test_lan_client_creation():
     c = LANClient("Test", "192.168.1.1", port=20011)
     assert "192.168.1.1" in c.api_endpoint
     assert "20011" in c.api_endpoint
+    assert c._transport.headers.get("X-platform") == "Test"
+    assert "User-Agent" in c._transport.headers
 
 
 def test_lan_client_https():
@@ -52,6 +57,9 @@ def test_server_client_creation():
     assert c.developer_token == "token"
     assert c.uid == "uid123"
     assert "lovense-api.com" in c.api_endpoint
+    assert "User-Agent" in c._transport.headers
+    assert "lovensepy/" in c._transport.headers["User-Agent"]
+    assert "github.com/koval01/lovensepy" in c._transport.headers["User-Agent"]
 
 
 def test_lan_client_decode_response():
@@ -92,3 +100,38 @@ def test_lovense_https_fingerprint():
     fp = LOVENSE_HTTPS_FINGERPRINT.replace(":", "")
     assert len(fp) == 64
     assert all(c in "0123456789ABCDEF" for c in fp)
+
+
+def test_http_identity_user_agent_matches_pyproject_version():
+    """User-Agent includes the same version string as pyproject.toml."""
+    from lovensepy._http_identity import (
+        default_http_headers,
+        merge_http_headers,
+        user_agent_string,
+    )
+
+    root = Path(__file__).resolve().parent.parent
+    with (root / "pyproject.toml").open("rb") as fp:
+        expected_ver = tomllib.load(fp)["project"]["version"]
+
+    ua = user_agent_string()
+    assert f"lovensepy/{expected_ver}" in ua
+    assert "github.com/koval01/lovensepy" in ua
+    assert "git@koval-dev.org" in ua
+
+    assert default_http_headers() == {"User-Agent": ua}
+
+    merged = merge_http_headers({"X-platform": "MyApp", "User-Agent": "custom-ua"})
+    assert merged["User-Agent"] == "custom-ua"
+    assert merged["X-platform"] == "MyApp"
+
+
+def test_package_version_export():
+    """Top-level __version__ matches pyproject when installed or from source."""
+    import lovensepy
+
+    root = Path(__file__).resolve().parent.parent
+    with (root / "pyproject.toml").open("rb") as fp:
+        expected_ver = tomllib.load(fp)["project"]["version"]
+
+    assert lovensepy.__version__ == expected_ver
