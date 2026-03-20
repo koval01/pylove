@@ -18,6 +18,7 @@ Python client for the **Lovense API**. Supports Standard API (LAN & Server), Sta
   - [Socket API](#socket-api-tutorial)
   - [Toy Events](#toy-events-tutorial)
   - [Home Assistant MQTT](#home-assistant-mqtt-tutorial)
+  - [FastAPI LAN REST](#fastapi-lan-rest-tutorial)
 - [API Reference](#api-reference)
   - [LANClient](#lanclient)
   - [ServerClient](#serverclient)
@@ -46,6 +47,7 @@ Python client for the **Lovense API**. Supports Standard API (LAN & Server), Sta
 - **Standard Socket API**: getToken, getSocketUrl, WebSocket client for QR flow and remote control
 - **Toy Events API**: Real-time events (toy-list, button-down, function-strength-changed, etc.)
 - **Home Assistant MQTT bridge** (optional): MQTT Discovery + control via local Game Mode (`pip install 'lovensepy[mqtt]'`)
+- **FastAPI LAN example** (`examples/fastapi_lan_api.py`): HTTP REST + OpenAPI `/docs` for Game Mode, per-motor scheduling, presets/patterns, `/tasks` — see [tutorial](#fastapi-lan-rest-tutorial)
 
 ---
 
@@ -113,6 +115,7 @@ client.function_request({Actions.VIBRATE: 10}, time=3)
 | Socket / local only | `LANClient` | IP + port only | No token, no WebSocket |
 | Events API | `ToyEventsClient` | access (appName) | Port 20011. Lovense Remote only |
 | Home Assistant | `HAMqttBridge` | MQTT broker + Game Mode LAN IP | MQTT Discovery; commands → `AsyncLANClient`; state via Toy Events |
+| Example REST (panels) | `examples/fastapi_lan_api.py` | Game Mode LAN IP + port | FastAPI + OpenAPI; asyncio scheduler; same LAN commands as `LANClient` |
 
 **Flow:** Standard local → HTTP/HTTPS to device. Standard server → HTTPS to Lovense cloud. Socket → WebSocket to cloud (or HTTPS to device when `use_local_commands=True`). Events → WebSocket to device.
 
@@ -457,6 +460,38 @@ async def main():
 
 asyncio.run(main())
 ```
+
+---
+
+### FastAPI LAN REST Tutorial
+
+Example **HTTP API** on your LAN for dashboards, scripts, or mobile apps: it wraps **Game Mode** (`LANClient`) with **FastAPI**, **OpenAPI** (`/docs`), and an **asyncio** scheduler (per-motor `Function` slots, preset/pattern sessions, `GET /tasks`).
+
+**Requirements:** `pip install fastapi uvicorn lovensepy`
+
+**Step 1:** Environment (minimum):
+
+```bash
+export LOVENSE_LAN_IP=192.168.1.100   # host running Lovense Remote (Game Mode)
+# optional: LOVENSE_LAN_PORT=20011 LOVENSE_APP_NAME=... LOVENSE_TOY_IDS=id1,id2
+# optional: LOVENSE_SESSION_MAX_SEC=60  # server /tasks row when preset/pattern time is 0
+```
+
+**Step 2:** Run:
+
+```bash
+uvicorn examples.fastapi_lan_api:app --host 0.0.0.0 --port 8000
+# or: fastapi dev examples/fastapi_lan_api.py
+```
+
+**Step 3:** Open **http://127.0.0.1:8000/docs** — try `GET /toys`, `POST /command/preset`, `GET /tasks`, stops (`/command/stop/...` and batch variants).
+
+**Behavior notes**
+
+- Re-sending the **same** preset/pattern for the same toy **extends** the session and **sends another LAN command** with the new `time` (Lovense stops after each command’s `timeSec` otherwise).
+- `GET /tasks` combines **function** rows (`kind: function`) and **preset/pattern** rows (`kind: preset` / `pattern`); timestamps include `started_at` (UTC) and `started_monotonic_sec` for stable `remaining_sec` math.
+
+See also the [Examples](#examples) table row for `examples/fastapi_lan_api.py`.
 
 ---
 
@@ -1030,8 +1065,11 @@ For local HTTPS (ports 30011/30011), lovensepy verifies the Lovense certificate 
 | `examples/socket_api_full.py` | Socket API with QR flow and command sending |
 | `examples/toy_events_full.py` | Toy Events — receive real-time events |
 | `examples/ha_mqtt_bridge.py` | Home Assistant MQTT bridge (Game Mode + broker) |
+| `examples/fastapi_lan_api.py` | FastAPI REST + OpenAPI for Game Mode; per-motor tasks, presets/patterns, `/tasks`, batch stops — **[tutorial](#fastapi-lan-rest-tutorial)** |
 
 Run with env vars, e.g. `LOVENSE_LAN_IP=192.168.1.100 python examples/lan_game_mode.py`
+
+**FastAPI:** `LOVENSE_LAN_IP=192.168.1.100 uvicorn examples.fastapi_lan_api:app --host 0.0.0.0 --port 8000` — details in [FastAPI LAN REST Tutorial](#fastapi-lan-rest-tutorial).
 
 ---
 
