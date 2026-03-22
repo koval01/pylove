@@ -26,6 +26,7 @@ from .._utils import ip_to_domain
 from ..exceptions import LovenseAuthError, LovenseError, LovenseResponseParseError
 from ..security import LOVENSE_HTTPS_FINGERPRINT, verify_cert_fingerprint
 from ..transport import AsyncHttpTransport
+from .async_base import LovenseAsyncControlClient
 
 __all__ = ["AsyncLANClient", "LOVENSE_HTTPS_FINGERPRINT"]
 
@@ -70,7 +71,7 @@ def _action_letter(action: str | Actions) -> str:
     return mapping.get(action, action[0] if action else "")
 
 
-class AsyncLANClient:
+class AsyncLANClient(LovenseAsyncControlClient):
     """Standard API LAN (Game Mode) async client."""
 
     def __init__(
@@ -260,8 +261,11 @@ class AsyncLANClient:
         toy_id: str | list[str] | None = None,
         stop_previous: bool | None = None,
         timeout: float | None = None,
+        *,
+        wait_for_completion: bool = True,
     ) -> CommandResponse:
         """Send a Function command."""
+        _ = wait_for_completion  # BLE-only; LAN returns when the HTTP call completes.
         clamped = self._clamp_actions(actions)
         action_str = ",".join(f"{k}:{v}" for k, v in clamped.items())
 
@@ -319,8 +323,11 @@ class AsyncLANClient:
         time: float = 0,
         toy_id: str | list[str] | None = None,
         timeout: float | None = None,
+        *,
+        wait_for_completion: bool = True,
     ) -> CommandResponse:
         """Send a Pattern command with raw rule and strength strings."""
+        _ = wait_for_completion
         payload: dict[str, Any] = {
             "command": "Pattern",
             "rule": rule,
@@ -342,6 +349,8 @@ class AsyncLANClient:
         time: float = 0,
         toy_id: str | list[str] | None = None,
         timeout: float | None = None,
+        *,
+        wait_for_completion: bool = True,
     ) -> CommandResponse:
         """Send a Pattern command with list of strengths."""
         actions = actions or [Actions.ALL]
@@ -352,7 +361,9 @@ class AsyncLANClient:
         letters = self._actions_to_rule_letters(actions)
         rule = f"V:1;F:{letters};S:{interval}#" if letters else f"V:1;F:;S:{interval}#"
         strength = ";".join(map(str, pattern))
-        return await self.pattern_request_raw(strength, rule, time, toy_id, timeout=timeout)
+        return await self.pattern_request_raw(
+            strength, rule, time, toy_id, timeout=timeout, wait_for_completion=wait_for_completion
+        )
 
     async def preset_request(
         self,
@@ -360,14 +371,20 @@ class AsyncLANClient:
         time: float = 0,
         toy_id: str | list[str] | None = None,
         timeout: float | None = None,
+        *,
+        open_ended: bool = False,
+        wait_for_completion: bool = True,
     ) -> CommandResponse:
         """Send a Preset command."""
+        _ = wait_for_completion
         payload: dict[str, Any] = {
             "command": "Preset",
             "name": str(name),
             "timeSec": time,
             "apiVer": 1,
         }
+        if open_ended:
+            payload["openEnded"] = 1
         if toy_id is not None:
             payload["toy"] = toy_id
         return self._validate_response(
@@ -482,8 +499,14 @@ class AsyncLANClient:
             CommandResponse,
         )
 
-    async def get_toys(self, timeout: float | None = None) -> GetToysResponse:
+    async def get_toys(
+        self,
+        timeout: float | None = None,
+        *,
+        query_battery: bool = True,
+    ) -> GetToysResponse:
         """Get connected toys info."""
+        _ = query_battery  # LAN HTTP has no per-toy UART query; BLE hub uses this flag.
         return self._validate_response(
             await self.send_command({"command": "GetToys"}, timeout=timeout), GetToysResponse
         )
