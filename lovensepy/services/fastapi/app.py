@@ -1,7 +1,5 @@
 """FastAPI application: LAN (Game Mode) or BLE hub control."""
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
@@ -11,7 +9,12 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query, Request
 
 from lovensepy import Actions, LovenseError, Presets, __version__
-from lovensepy.ble_direct.client import LovenseBleAdvertisement, scan_lovense_ble_advertisements
+from lovensepy.ble_direct.branding_resolve import resolve_ble_branding_nickname
+from lovensepy.ble_direct.client import (
+    LovenseBleAdvertisement,
+    _slug_from_adv_name,
+    scan_lovense_ble_advertisements,
+)
 from lovensepy.ble_direct.hub import BleDirectHub, make_ble_toy_id
 from lovensepy.standard.async_lan import AsyncLANClient
 
@@ -19,6 +22,7 @@ from .backend import LovenseControlBackend
 from .config import ServiceConfig
 from .models import (
     PATTERN_TEMPLATES,
+    BleBrandingResolveBody,
     BleConnectBody,
     FunctionCommand,
     PatternCommand,
@@ -33,7 +37,7 @@ from .models import (
 from .monitor import merge_ble_advertisement_rows, start_ble_advertisement_monitor
 from .openapi import patch_openapi_toy_ids
 from .scheduler import ControlScheduler
-from .util import as_dict, extract_toy_ids
+from .util import as_dict, extract_toy_ids, gap_name_from_ble_advertisement_cache
 
 
 async def _refresh_openapi_toy_ids(
@@ -135,12 +139,21 @@ def create_app(
             out["ble_preset_emulate_pattern"] = cfg_m.ble_preset_emulate_pattern
         if cfg_m.mode == "ble":
             out["ble_advertisement_monitor"] = bool(cfg_m.ble_advertisement_monitor)
+            out["ble_advertisement_monitor_interval_sec"] = cfg_m.ble_monitor_interval_sec
             out["ble_last_advertisements"] = dict(
                 getattr(request.app.state, "last_ble_advertisements", {})
             )
         return out
 
-    @fastapi_app.get("/toys")
+    @fastapi_app.get(
+        "/toys",
+        summary="Toy list (GetToys shape)",
+        description=(
+            "In **ble** mode, each toy's ``nickName`` is resolved from packaged ToyConfig "
+            "(firmware-aware rules, then flat map, then UART detail fallback). "
+            "Dry-run the resolver with **POST /ble/branding/resolve**."
+        ),
+    )
     async def get_toys(request: Request) -> dict[str, Any]:
         be = request.app.state.backend
         try:
@@ -406,16 +419,36 @@ def create_app(
                 "devices": [{"address": r.address, "name": r.name, "rssi": r.rssi} for r in rows]
             }
 
+        @fastapi_app.post(
+            "/ble/branding/resolve",
+            summary="Resolve marketing nickName (ToyConfig)",
+            description=(
+                "Returns the same string the BLE hub uses for ``nickName`` in "
+                "``GET /toys``: firmware tables from packaged ToyConfig, then flat map, "
+                "then UART detail suffix. No device required — use to verify branding "
+                "after updating ``toy_config_ble_marketing*.json``."
+            ),
+        )
+        async def ble_branding_resolve(branding: BleBrandingResolveBody) -> dict[str, str]:
+            nick, source = resolve_ble_branding_nickname(
+                advertised_name=branding.advertised_name,
+                toy_type_slug=branding.toy_type_slug,
+                model_letter=branding.device_type_letter,
+                firmware=branding.firmware,
+            )
+            return {"nickName": nick, "source": source}
+
         @fastapi_app.get(
             "/ble/advertisements",
             summary="Cached BLE advertisements (scan + optional monitor)",
             description=(
                 "Returns the in-memory map: keys are BLE addresses, values are "
                 "`address`, `name`, `rssi`. It is updated by **`POST /ble/scan`** (each scan "
-                "merges its results) and, if enabled, the background monitor "
-                "(**`LOVENSE_BLE_ADVERT_MONITOR=1`**, see **`GET /meta`** → "
-                "`ble_advertisement_monitor`). Older entries from a previous scan remain until "
-                "overwritten by a newer advertisement for the same address."
+                "merges its results) and by the background monitor in **ble** mode "
+                "(on by default when the service loads config from the environment; interval "
+                "in **`GET /meta`** → `ble_advertisement_monitor_interval_sec`). Disable with "
+                "**`LOVENSE_BLE_ADVERT_MONITOR=0`**. Older entries remain until overwritten "
+                "by a newer advertisement for the same address."
             ),
         )
         async def ble_advertisements(request: Request) -> dict[str, Any]:
@@ -423,28 +456,41 @@ def create_app(
             return {"advertisements": dict(m)}
 
         @fastapi_app.post("/ble/connect")
-        async def ble_connect(request: Request, body: BleConnectBody) -> dict[str, Any]:
+        async def ble_connect(request: Request, ble: BleConnectBody) -> dict[str, Any]:
             hub = request.app.state.ble_hub
             if hub is None:
                 raise HTTPException(status_code=500, detail="BLE hub not initialized.")
             cfg_b: ServiceConfig = request.app.state.service_cfg
-            tid = body.toy_id or make_ble_toy_id(body.address, body.name, 0)
+            adv_cache = dict(getattr(request.app.state, "last_ble_advertisements", {}) or {})
+            resolved_gap = gap_name_from_ble_advertisement_cache(adv_cache, ble.address, ble.name)
+            gap_for_id = resolved_gap or ble.name
+            tid = ble.toy_id or make_ble_toy_id(ble.address, gap_for_id, 0)
+            slug = ble.toy_type
+            if slug is None and resolved_gap:
+                slug = _slug_from_adv_name(resolved_gap)
+            display = (resolved_gap or ble.name or "").strip() or tid
             try:
                 hub.add_toy(
                     tid,
-                    body.address,
-                    toy_type=body.toy_type,
-                    name=(body.name or tid),
-                    replace=body.replace,
+                    ble.address,
+                    toy_type=slug,
+                    name=display,
+                    replace=ble.replace,
                     **cfg_b.ble_connect_client_kwargs(),
                 )
                 await hub.connect(tid)
+                tid = await hub.enrich_toy_from_uart(
+                    tid, adv_name=(resolved_gap or ble.name or None)
+                )
             except LovenseError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             await _refresh_openapi_toy_ids(request.app, request.app.state.backend, cfg_b)
-            return {"toy_id": tid, "type": "OK"}
+            out: dict[str, Any] = {"toy_id": tid, "type": "OK"}
+            if resolved_gap:
+                out["advertised_name_from_scan"] = resolved_gap
+            return out
 
         @fastapi_app.post("/ble/disconnect/{toy_id}")
         async def ble_disconnect(toy_id: str, request: Request) -> dict[str, Any]:

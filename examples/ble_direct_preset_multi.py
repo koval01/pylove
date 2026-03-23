@@ -5,7 +5,7 @@ Send the same built-in preset to one or many BLE toys in parallel (direct BLE).
 Each toy needs its own :class:`~lovensepy.ble_direct.BleDirectClient`. Preset names
 match :class:`~lovensepy._constants.Presets` (``pulse``, ``wave``, …). Over BLE,
 :meth:`~lovensepy.ble_direct.client.BleDirectClient.preset_request` sends UART
-``Pat:{n};`` (integer slot), like Lovense Connect — see :data:`~lovensepy.PRESET_BLE_PAT_INDEX`.
+``Pat:{n};`` (integer slot); see :data:`~lovensepy.PRESET_BLE_PAT_INDEX`.
 
 Requires::
 

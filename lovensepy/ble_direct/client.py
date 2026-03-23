@@ -12,6 +12,7 @@ import contextlib
 import importlib.util
 import json
 import logging
+import os
 import re
 import sys
 import threading
@@ -67,7 +68,7 @@ def _pattern_action_letter(action: str | Actions) -> str:
 # When ``time`` is 0 and ``open_ended`` is false, hold the preset this long before a stop burst.
 _DEFAULT_BLE_PRESET_HOLD_SEC = 12.0
 
-# Lovense Connect validates Pat slot roughly 0..20; keep raw numeric presets in range.
+# Typical firmware accepts Pat/Preset slot roughly 0..20; keep raw numeric presets in range.
 _BLE_PAT_INDEX_MAX = 20
 
 # When ``ble_preset_emulate_with_pattern`` is true, the four Remote names use stepped ``Vibrate*``
@@ -82,6 +83,30 @@ _BLE_APP_PRESET_AS_PATTERN: dict[str, tuple[list[int], int]] = {
 _logger = logging.getLogger(__name__)
 
 
+def _transient_gatt_write_exception_types() -> tuple[type[BaseException], ...]:
+    """Exception types that often indicate a flaky BLE link (worth retrying a GATT write)."""
+    types: list[type[BaseException]] = [TimeoutError, OSError]
+    try:
+        from bleak import BleakError
+
+        types.append(BleakError)
+    except ImportError:
+        pass
+    return tuple(types)
+
+
+def _is_transient_gatt_write_error(exc: BaseException) -> bool:
+    if isinstance(exc, asyncio.CancelledError):
+        return False
+    transient = _transient_gatt_write_exception_types()
+    if isinstance(exc, transient):
+        return True
+    cause = getattr(exc, "__cause__", None)
+    if cause is not None and cause is not exc:
+        return _is_transient_gatt_write_error(cause)
+    return False
+
+
 def normalize_ble_preset_uart_keyword(raw: str) -> str:
     """Return ``Pat`` or ``Preset`` for UART preset lines (case-insensitive input)."""
     s = (raw or "Pat").strip().lower()
@@ -92,6 +117,41 @@ def normalize_ble_preset_uart_keyword(raw: str) -> str:
     raise LovenseBLEError(
         f"ble_preset_uart_keyword must be 'Pat' or 'Preset' (got {raw!r})",
         endpoint="ble_direct",
+    )
+
+
+def ble_preset_connect_kwargs(
+    *,
+    uart_keyword_raw: str | None,
+    emulate_pattern: bool,
+) -> dict[str, Any]:
+    """Build :class:`BleDirectClient` kwargs for preset UART behaviour.
+
+    Same rules as FastAPI :meth:`ServiceConfig.ble_connect_client_kwargs`.
+    """
+    raw = (uart_keyword_raw or "Preset").strip()
+    if not raw:
+        raw = "Preset"
+    out: dict[str, Any] = {
+        "ble_preset_uart_keyword": normalize_ble_preset_uart_keyword(raw),
+    }
+    if emulate_pattern:
+        out["ble_preset_emulate_with_pattern"] = True
+    return out
+
+
+def ble_direct_client_preset_kwargs_from_env() -> dict[str, Any]:
+    """Preset-related :class:`BleDirectClient` kwargs from standard env vars.
+
+    - ``LOVENSEPY_BLE_PRESET_UART`` — ``Pat`` or ``Preset`` (default ``Preset``, same as FastAPI).
+    - ``LOVENSEPY_BLE_PRESET_EMULATE_PATTERN`` — truthy to emulate presets via pattern stepping.
+    """
+    ble_uart_raw = (os.environ.get("LOVENSEPY_BLE_PRESET_UART") or "Preset").strip()
+    emulate_raw = os.environ.get("LOVENSEPY_BLE_PRESET_EMULATE_PATTERN", "").strip().lower()
+    emulate = emulate_raw in ("1", "true", "yes", "on")
+    return ble_preset_connect_kwargs(
+        uart_keyword_raw=ble_uart_raw or None,
+        emulate_pattern=emulate,
     )
 
 
@@ -533,6 +593,12 @@ class BleDirectClient(LovenseAsyncControlClient):
     UART stop burst (see :data:`lovensepy.ble_direct.uart_catalog.DEFAULT_FULL_STOP_COMMANDS`).
     That is best-effort: if the toy is out of range, reconnect fails and motor
     behaviour depends on firmware.
+
+    **GATT write resilience:** optional exponential backoff retries on transient
+    transport errors (``BleakError``, timeouts, some ``OSError``) from
+    ``write_gatt_char``. This is **not** the same as Socket API
+    ``start_background(auto_reconnect=True)`` (session-level); it only re-sends
+    individual writes. Use ``gatt_write_max_attempts > 1`` on noisy links.
     """
 
     def __init__(
@@ -552,6 +618,9 @@ class BleDirectClient(LovenseAsyncControlClient):
         dual_single_channel_prime_delay_s: float = DEFAULT_DUAL_SINGLE_CHANNEL_PRIME_DELAY_S,
         ble_preset_uart_keyword: str = "Pat",
         ble_preset_emulate_with_pattern: bool = False,
+        gatt_write_max_attempts: int = 1,
+        gatt_write_retry_base_delay: float = 0.2,
+        gatt_write_retry_max_delay: float = 2.0,
     ) -> None:
         ensure_bleak_installed()
         self.address = address
@@ -592,6 +661,49 @@ class BleDirectClient(LovenseAsyncControlClient):
         self.last_command: dict[str, Any] | None = None
         self._ble_preset_uart_keyword = normalize_ble_preset_uart_keyword(ble_preset_uart_keyword)
         self._ble_preset_emulate_with_pattern = bool(ble_preset_emulate_with_pattern)
+        self._gatt_write_max_attempts = max(1, int(gatt_write_max_attempts))
+        self._gatt_write_retry_base_delay = float(gatt_write_retry_base_delay)
+        self._gatt_write_retry_max_delay = float(
+            max(gatt_write_retry_base_delay, gatt_write_retry_max_delay)
+        )
+
+    async def _write_gatt_char_resilient(self, payload: bytes) -> None:
+        """Write to TX with optional exponential backoff on transient BLE errors."""
+        if not self.is_connected or not self._resolved_tx_uuid or not self._client:
+            raise LovenseBLEError("Not connected")
+        attempts = self._gatt_write_max_attempts
+        delay = self._gatt_write_retry_base_delay
+        cap = self._gatt_write_retry_max_delay
+        last: BaseException | None = None
+        for attempt in range(attempts):
+            try:
+                await self._client.write_gatt_char(
+                    self._resolved_tx_uuid,
+                    payload,
+                    response=self._write_with_response,
+                )
+                return
+            except BaseException as e:
+                last = e
+                if isinstance(e, asyncio.CancelledError):
+                    raise
+                if attempt + 1 >= attempts or not _is_transient_gatt_write_error(e):
+                    break
+                _logger.debug(
+                    "GATT write retry %s/%s after %s: %s",
+                    attempt + 1,
+                    attempts,
+                    type(e).__name__,
+                    e,
+                )
+                await asyncio.sleep(min(delay, cap))
+                delay = min(delay * 2.0, cap)
+        exc = last
+        if exc is None:
+            raise LovenseBLEError("BLE GATT write failed")
+        if isinstance(exc, LovenseBLEError):
+            raise exc
+        raise LovenseBLEError(f"BLE GATT write failed: {exc}") from exc
 
     @property
     def is_connected(self) -> bool:
@@ -943,11 +1055,7 @@ class BleDirectClient(LovenseAsyncControlClient):
             return
         if len(clamped) == 1 and next(iter(clamped)) == "Vibrate":
             payload = build_vibrate_command(level).encode()
-            await self._client.write_gatt_char(
-                self._resolved_tx_uuid,
-                payload,
-                response=self._write_with_response,
-            )
+            await self._write_gatt_char_resilient(payload)
         else:
             await self._send_uart_for_clamped(ble_clamp_actions(clamped))
         self._last_vibrate_sig = sig
@@ -964,11 +1072,7 @@ class BleDirectClient(LovenseAsyncControlClient):
         self._last_vibrate_sig = None
         if reset_dual_motor_route:
             self._dual_last_nonzero_motor = None
-        await self._client.write_gatt_char(
-            self._resolved_tx_uuid,
-            payload,
-            response=self._write_with_response,
-        )
+        await self._write_gatt_char_resilient(payload)
 
     async def send_uart_command(
         self,
@@ -1012,11 +1116,7 @@ class BleDirectClient(LovenseAsyncControlClient):
         self._last_vibrate_sig = None
         for payload in payloads:
             with contextlib.suppress(Exception):
-                await self._client.write_gatt_char(
-                    self._resolved_tx_uuid,
-                    payload,
-                    response=self._write_with_response,
-                )
+                await self._write_gatt_char_resilient(payload)
         self._dual_vibrate_levels = (0, 0)
 
     # --- Standard API parity (async LAN–like control over UART) ---
@@ -1357,8 +1457,8 @@ class BleDirectClient(LovenseAsyncControlClient):
         :meth:`pattern_request` instead of Pat/Preset — use when firmware ignores UART preset lines
         but stepping still works.
 
-        Lovense Connect uses ``Pat``; some official UART docs use ``Preset`` for the same idea.
-        UART prefix is the constructor ``ble_preset_uart_keyword`` (default ``Pat``).
+        UART prefix comes from constructor ``ble_preset_uart_keyword`` (default ``Pat``); public UART
+        documentation often documents ``Preset`` for the same idea.
 
         If ``time`` > 0, that many seconds run before a motor stop burst. If ``time`` is 0 and
         ``open_ended`` is false, :data:`_DEFAULT_BLE_PRESET_HOLD_SEC` is used. If ``open_ended`` is

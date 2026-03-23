@@ -4,10 +4,37 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-03-23
+
+### Added
+
+- BLE **marketing / firmware** metadata (`toy_config_ble_marketing*.json`) and
+  :func:`~lovensepy.ble_direct.branding_resolve.resolve_ble_branding_nickname` for consistent display
+  names (ToyConfig map, firmware rules, UART fallback).
+- **Russian** documentation mirror of the English site (`.ru.md` alongside `.en.md`); MkDocs nav and
+  workflows updated.
+
+### Changed
+
+- :class:`~lovensepy.integrations.mqtt.ha_bridge.HAMqttBridge` and MQTT discovery: topic/layout and
+  bridge behaviour refinements (see tests and `ha_bridge` / `discovery` / `topics`).
+- FastAPI LAN service: configuration, models, and BLE/connect endpoints aligned with current BLE hub
+  behaviour.
+- Examples (`fastapi_lan_api`, `ha_mqtt_bridge`) and CI/docs workflows adjusted for the new doc layout.
+
+### Fixed
+
+- BLE direct client / hub edge cases covered by expanded unit tests (branding, marketing firmware,
+  hub lifecycle).
+
 ## [1.1.0] - 2026-03-22
 
 ### Added
 
+- :class:`~lovensepy.integrations.mqtt.ha_bridge.HAMqttBridge` **BLE transport** (`transport="ble"`):
+  optional :class:`~lovensepy.ble_direct.hub.BleDirectHub` or automatic
+  :meth:`~lovensepy.ble_direct.hub.BleDirectHub.discover_and_connect` on :meth:`~lovensepy.integrations.mqtt.ha_bridge.HAMqttBridge.start`;
+  Toy Events remain **LAN-only**. Example script supports ``LOVENSE_TRANSPORT=ble`` and BLE scan env vars.
 - :class:`~lovensepy.standard.async_base.LovenseAsyncControlClient` — abstract base for the shared
   async API on :class:`~lovensepy.standard.async_lan.AsyncLANClient`,
   :class:`~lovensepy.standard.async_server.AsyncServerClient`,
@@ -19,6 +46,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- :class:`~lovensepy.integrations.mqtt.ha_bridge.HAMqttBridge` MQTT Discovery uses **per-toy**
+  retained availability (`{prefix}/{safe_toy_id}/device_availability`) together with the bridge topic,
+  so Home Assistant reflects powered-off / disconnected toys (from GetToys ``status`` or BLE hub
+  connection state). Restart the bridge once so updated discovery configs are retained on the broker.
+- :class:`~lovensepy.integrations.mqtt.ha_bridge.HAMqttBridge` no longer drops toys from its cache when
+  a GetToys snapshot omits them (empty list / glitch): entries stay for MQTT command routing, with
+  ``device_availability`` set to ``offline`` and ``status`` forced to off.
+- BLE Home Assistant naming now uses UART ``DeviceType`` enrich fields in ``nickName`` (for example
+  ``Edge (model P, fw 240)``) so discovered entities are more descriptive than plain advertised names.
 - :class:`~lovensepy.standard.async_server.AsyncServerClient` now matches the async control
   signatures used by LAN/BLE (e.g. ``wait_for_completion``, ``open_ended`` on preset, ``get_toys(...,
   query_battery=...)``, Position / PatternV2 helpers). :class:`~lovensepy.standard.async_lan.AsyncLANClient`
@@ -28,9 +64,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Removed optional ``uart_index`` / ``uart_keyword`` from ``POST /command/preset``; use
   ``LOVENSEPY_BLE_PRESET_UART`` (and reconnect) to switch ``Pat`` vs ``Preset``.
 - FastAPI BLE: default UART prefix for presets is **Preset** (public UART docs + `/command/preset`
-  naming); set **`LOVENSEPY_BLE_PRESET_UART=Pat`** to match Lovense Connect’s decompiled **`Pat`**.
-  :class:`~lovensepy.ble_direct.client.BleDirectClient` still defaults to **Pat** when constructed
-  without kwargs.
+  naming). Set **`LOVENSEPY_BLE_PRESET_UART=Pat`** to align FastAPI with
+  :class:`~lovensepy.ble_direct.client.BleDirectClient`, which still defaults to **Pat** when
+  constructed without kwargs.
 - CI runs the full fast unit test set (including BLE, UART, WebSocket, and
   Socket cleanup tests), Python 3.12 and 3.13 matrix, and coverage reporting.
 - Async integration tests use `pytest-asyncio` (`asyncio_mode = auto`) consistently.
@@ -63,6 +99,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Initial changelog entry for this release line; see Git history for earlier changes.
 
-[Unreleased]: https://github.com/koval01/lovensepy/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/koval01/lovensepy/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/koval01/lovensepy/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/koval01/lovensepy/releases/tag/v1.1.0
 [1.0.6]: https://github.com/koval01/lovensepy/releases/tag/v1.0.6

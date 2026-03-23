@@ -1,5 +1,6 @@
 """Direct BLE control (optional ``bleak``)."""
 
+from .branding_resolve import resolve_ble_branding_nickname
 from .client import (
     DEFAULT_DUAL_SINGLE_CHANNEL_PRIME_DELAY_S,
     DEFAULT_POST_TIMED_FUNCTION_SILENCE_COOLDOWN_S,
@@ -27,6 +28,7 @@ from .uart_replies import DeviceTypeFields, parse_battery_percent, parse_device_
 __all__ = [
     "BleDirectHub",
     "make_ble_toy_id",
+    "resolve_ble_branding_nickname",
     "BleDirectHubSync",
     "BleDirectClient",
     "ble_sync_default_timeout",

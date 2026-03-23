@@ -4,6 +4,8 @@ MQTT topic layout for Home Assistant bridge.
 Topics (default prefix ``lovensepy``):
 
 - ``{prefix}/bridge/status`` — bridge availability (``online`` / ``offline``), retained.
+- ``{prefix}/{safe_toy_id}/device_availability`` — per-toy reachability
+  (BLE link / API ``status``), retained.
 - ``{prefix}/{safe_toy_id}/{feature}/set`` — HA command topics.
 - ``{prefix}/{safe_toy_id}/{feature}/state`` — HA state topics.
 - ``homeassistant/{component}/{object_id}/config`` — MQTT Discovery.
@@ -16,6 +18,7 @@ import re
 __all__ = [
     "mqtt_safe_toy_id",
     "bridge_status_topic",
+    "toy_availability_topic",
     "command_topic",
     "state_topic",
     "discovery_topic",
@@ -53,6 +56,12 @@ def bridge_status_topic(prefix: str) -> str:
     """Bridge online/offline status topic."""
     p = prefix.strip("/")
     return f"{p}/bridge/status"
+
+
+def toy_availability_topic(prefix: str, safe_toy_id: str) -> str:
+    """Per-toy online/offline for Home Assistant (alongside :func:`bridge_status_topic`)."""
+    p = prefix.strip("/")
+    return f"{p}/{safe_toy_id}/device_availability"
 
 
 def command_topic(prefix: str, safe_toy_id: str, feature_segment: str) -> str:

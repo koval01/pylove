@@ -1,29 +1,42 @@
 """
-Home Assistant MQTT bridge: LAN control + Toy Events state -> MQTT Discovery.
+Home Assistant MQTT bridge: LAN or direct BLE control + optional Toy Events -> MQTT Discovery.
 
 Requires optional dependency: ``pip install 'lovensepy[mqtt]'`` (``paho-mqtt``).
+BLE transport additionally needs ``pip install 'lovensepy[ble]'`` (``bleak``).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from ..._constants import FUNCTION_RANGES, Presets
+from ...exceptions import LovenseBLEError
+from ...standard.async_base import LovenseAsyncControlClient
 from ...standard.async_lan import AsyncLANClient
 from ...toy_events.client import ToyEventsClient
 from ...toy_utils import features_for_toy
-from .discovery import build_discovery_payloads, default_availability_topic
+from .discovery import (
+    build_discovery_payloads,
+    default_availability_topic,
+    discovery_object_id,
+    re_safe_prefix,
+)
 from .state import StateDeduper
 from .topics import (
     bridge_status_topic,
+    discovery_topic,
     feature_topic_segment,
     mqtt_safe_toy_id,
     state_topic,
     subscribe_wildcard,
     topic_segment_to_action_name,
+    toy_availability_topic,
 )
+
+if TYPE_CHECKING:
+    from ...ble_direct.hub import BleDirectHub
 
 __all__ = ["HAMqttBridge"]
 
@@ -168,9 +181,38 @@ def _strength_from_payload(payload: Any, toy_id: str) -> dict[str, int | float] 
     return out or None
 
 
+def _normalize_toy_row_from_get_toys(info: Any) -> dict[str, Any]:
+    """Normalize :class:`~lovensepy._models.ToyInfo` dump for ``features_for_toy``."""
+    d = info.model_dump()
+    tt = d.get("toyType")
+    ty = d.get("type")
+    if (not tt or not str(tt).strip()) and isinstance(ty, str) and ty.strip():
+        d["toyType"] = ty
+    return d
+
+
+def _toy_connected_from_dict(toy: dict[str, Any]) -> bool:
+    """Infer reachability from GetToys / toy-list ``status`` (BLE hub uses ``1``/``0``)."""
+    st = toy.get("status")
+    if st is None:
+        return True
+    s = str(st).strip().lower()
+    if s in ("0", "false", "off", "disconnected", "no", "inactive", "unavailable"):
+        return False
+    if s in ("1", "true", "on", "connected", "yes", "active", "available"):
+        return True
+    try:
+        return int(float(s)) != 0
+    except ValueError:
+        return True
+
+
 class HAMqttBridge:
     """
-    Publish Home Assistant MQTT Discovery and bridge commands to :class:`AsyncLANClient`.
+    Publish Home Assistant MQTT Discovery and bridge commands to a
+    :class:`~lovensepy.standard.async_base.LovenseAsyncControlClient`
+    (:class:`~lovensepy.standard.async_lan.AsyncLANClient` or
+    :class:`~lovensepy.ble_direct.hub.BleDirectHub`).
 
     Runs ``paho-mqtt`` networking in a background thread; Lovense I/O uses asyncio on the
     caller's loop (the loop active when :meth:`start` is called).
@@ -181,7 +223,8 @@ class HAMqttBridge:
         mqtt_host: str,
         mqtt_port: int = 1883,
         *,
-        lan_ip: str,
+        lan_ip: str | None = None,
+        transport: Literal["lan", "ble"] = "lan",
         lan_port: int = 20011,
         toy_events_port: int | None = None,
         app_name: str = "lovensepy_ha",
@@ -192,11 +235,24 @@ class HAMqttBridge:
         refresh_interval: float = 45.0,
         use_https: bool = False,
         use_toy_events: bool = True,
+        ble_discover_timeout: float = 15.0,
+        ble_name_prefix: str | None = "LVS-",
+        ble_enrich_uart: bool = True,
+        ble_client_kwargs: dict[str, Any] | None = None,
+        ble_hub: BleDirectHub | None = None,
     ) -> None:
         _require_mqtt()
+        if transport not in ("lan", "ble"):
+            raise ValueError("transport must be 'lan' or 'ble'")
+        if transport == "lan" and not (lan_ip and str(lan_ip).strip()):
+            raise ValueError("lan_ip is required when transport='lan'")
+        if ble_hub is not None and transport != "ble":
+            raise ValueError("ble_hub is only valid when transport='ble'")
+
         self._mqtt_host = mqtt_host
         self._mqtt_port = int(mqtt_port)
-        self._lan_ip = lan_ip
+        self._transport = transport
+        self._lan_ip = str(lan_ip).strip() if lan_ip else ""
         self._lan_port = int(lan_port)
         self._toy_events_port = (
             int(toy_events_port) if toy_events_port is not None else self._lan_port
@@ -208,13 +264,19 @@ class HAMqttBridge:
         self._mqtt_client_id = mqtt_client_id or f"{app_name}_bridge"
         self._refresh_interval = max(5.0, float(refresh_interval))
         self._use_https = use_https
-        self._use_toy_events = use_toy_events
+        # Toy Events reach the Lovense app over LAN only; BLE mode uses polling via get_toys.
+        self._use_toy_events = bool(use_toy_events and transport == "lan")
+        self._ble_discover_timeout = float(ble_discover_timeout)
+        self._ble_name_prefix = ble_name_prefix
+        self._ble_enrich_uart = bool(ble_enrich_uart)
+        self._ble_client_kwargs = dict(ble_client_kwargs or {})
+        self._ble_hub_injected = ble_hub
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._running = False
         self._lock = asyncio.Lock()
 
-        self._lan: AsyncLANClient | None = None
+        self._control: LovenseAsyncControlClient | None = None
         self._mqtt: Any = None
         self._deduper = StateDeduper()
 
@@ -223,6 +285,8 @@ class HAMqttBridge:
         self._published_discovery: set[str] = set()
         self._initialized_toy_states: set[str] = set()
         self._feature_levels: dict[str, dict[str, int]] = {}
+        self._inventory_ready = False
+        self._cleared_stale_safe_ids: set[str] = set()
 
         self._refresh_task: asyncio.Task[None] | None = None
         self._toy_events_task: asyncio.Task[None] | None = None
@@ -250,6 +314,43 @@ class HAMqttBridge:
 
             loop.call_soon_threadsafe(_clear)
 
+    def _publish_toy_availability(self, safe: str, connected: bool) -> None:
+        """Retained per-toy online/offline for MQTT Discovery (paired with bridge status)."""
+        if self._mqtt is None:
+            return
+        topic = toy_availability_topic(self._topic_prefix, safe)
+        payload = "online" if connected else "offline"
+        self._mqtt.publish(topic, payload, qos=0, retain=True)
+
+    def _mark_toy_disconnected(self, safe: str) -> None:
+        """Mark toy as offline in local cache + retained MQTT availability."""
+        toy = self._toys.get(safe)
+        if isinstance(toy, dict):
+            toy["status"] = "0"
+        self._publish_toy_availability(safe, False)
+
+    def _clear_discovery_for_stale_safe_id(self, safe_id: str) -> None:
+        """Delete retained HA discovery rows for a stale unknown safe_id."""
+        if self._mqtt is None or not safe_id or safe_id in self._cleared_stale_safe_ids:
+            return
+        self._cleared_stale_safe_ids.add(safe_id)
+        pfx = self._topic_prefix.strip("/")
+        oid_prefix = re_safe_prefix(pfx)
+        kinds: list[str] = ["stop", "preset", "battery"]
+        kinds.extend(
+            f"num_{feature_topic_segment(action)}" for action in sorted(FUNCTION_RANGES.keys())
+        )
+        for kind in kinds:
+            oid = discovery_object_id(oid_prefix, safe_id, kind)
+            component = (
+                "number"
+                if kind.startswith("num_")
+                else ("button" if kind == "stop" else "select" if kind == "preset" else "sensor")
+            )
+            topic = discovery_topic(component, oid)
+            self._mqtt.publish(topic, payload="", qos=0, retain=True)
+            self._published_discovery.discard(topic)
+
     def _schedule(self, coro: Any) -> None:
         loop = self._loop
         if loop is None or not self._running:
@@ -267,19 +368,23 @@ class HAMqttBridge:
         fut.add_done_callback(_log_err)
 
     async def start(self) -> None:
-        """Connect MQTT and LAN client, publish discovery, start background tasks."""
+        """Connect MQTT, open control transport (LAN or BLE), publish discovery, start tasks."""
         if self._running:
             return
         _require_mqtt()
         self._running = True
         self._loop = asyncio.get_running_loop()
 
-        self._lan = AsyncLANClient(
-            self._app_name,
-            self._lan_ip,
-            port=self._lan_port,
-            use_https=self._use_https,
-        )
+        if self._transport == "lan":
+            self._control = AsyncLANClient(
+                self._app_name,
+                self._lan_ip,
+                port=self._lan_port,
+                use_https=self._use_https,
+            )
+        elif self._ble_hub_injected is not None:
+            self._control = self._ble_hub_injected
+        # BLE auto-discover: connect MQTT first so bridge availability publishes quickly, then scan.
 
         self._mqtt = mqtt.Client(  # type: ignore[union-attr]
             mqtt.CallbackAPIVersion.VERSION2,
@@ -300,13 +405,34 @@ class HAMqttBridge:
         except TimeoutError as e:
             raise TimeoutError("MQTT broker did not connect within 30s") from e
 
+        if self._transport == "ble" and self._ble_hub_injected is None:
+            from ...ble_direct.client import ble_direct_client_preset_kwargs_from_env
+            from ...ble_direct.hub import BleDirectHub as _BleDirectHub
+
+            hub = _BleDirectHub()
+            ble_kwargs = ble_direct_client_preset_kwargs_from_env()
+            ble_kwargs.update(self._ble_client_kwargs)
+            try:
+                await hub.discover_and_connect(
+                    timeout=self._ble_discover_timeout,
+                    name_prefix=self._ble_name_prefix,
+                    enrich_uart=self._ble_enrich_uart,
+                    **ble_kwargs,
+                )
+            except ImportError as e:
+                raise ImportError(
+                    "BLE transport requires bleak. Install with: pip install 'lovensepy[ble]'"
+                ) from e
+            self._control = hub
+            await self._refresh_toys_and_discovery()
+
         self._refresh_task = asyncio.create_task(self._refresh_loop())
 
         if self._use_toy_events:
             self._toy_events_task = asyncio.create_task(self._toy_events_loop())
 
     async def stop(self) -> None:
-        """Stop background tasks, disconnect MQTT, close LAN HTTP client."""
+        """Stop tasks, disconnect MQTT, release control client (HTTP session / BLE)."""
         self._running = False
         if self._refresh_task:
             self._refresh_task.cancel()
@@ -330,6 +456,8 @@ class HAMqttBridge:
 
         if self._mqtt is not None:
             try:
+                for safe in list(self._toys.keys()):
+                    self._publish_toy_availability(safe, False)
                 self._mqtt.publish(
                     bridge_status_topic(self._topic_prefix),
                     "offline",
@@ -342,12 +470,14 @@ class HAMqttBridge:
             self._mqtt.disconnect()
             self._mqtt = None
 
-        if self._lan is not None:
-            await self._lan.aclose()
-            self._lan = None
+        if self._control is not None:
+            await self._control.aclose()
+            self._control = None
 
         self._deduper.clear()
         self._feature_levels.clear()
+        self._inventory_ready = False
+        self._cleared_stale_safe_ids.clear()
         self._mqtt_ready = None
         self._loop = None
 
@@ -442,7 +572,9 @@ class HAMqttBridge:
                     if not tid:
                         continue
                     safe = mqtt_safe_toy_id(tid)
-                    self._toys[safe] = t
+                    merged = _normalize_toy_dict_from_event(dict(t))
+                    self._toys[safe] = merged
+                    self._publish_toy_availability(safe, _toy_connected_from_dict(merged))
                 await self._publish_discovery_unlocked()
             for t in toys:
                 tid = str(t.get("id") or "")
@@ -486,11 +618,11 @@ class HAMqttBridge:
                     await self._publish_state_str(safe, seg, str(int(clamped)))
 
     async def _refresh_toys_and_discovery(self) -> None:
-        if self._lan is None or self._mqtt is None:
+        if self._control is None or self._mqtt is None:
             return
         async with self._lock:
             try:
-                resp = await self._lan.get_toys()
+                resp = await self._control.get_toys()
             except Exception:  # pylint: disable=broad-exception-caught
                 _logger.exception("GetToys failed")
                 return
@@ -498,13 +630,16 @@ class HAMqttBridge:
             if data is None:
                 return
             toys = data.toys
+            seen: set[str] = set()
             for info in toys:
-                d = info.model_dump()
+                d = _normalize_toy_row_from_get_toys(info)
                 tid = str(d.get("id") or "")
                 if not tid:
                     continue
                 safe = mqtt_safe_toy_id(tid)
+                seen.add(safe)
                 self._toys[safe] = d
+                self._publish_toy_availability(safe, _toy_connected_from_dict(d))
                 b_level = info.battery
                 if b_level is None:
                     b_level = _battery_from_payload(d)
@@ -515,6 +650,16 @@ class HAMqttBridge:
                         str(int(b_level)),
                         mqtt_retain=True,
                     )
+            # Keep last-known toy rows when they disappear from this GetToys snapshot (empty
+            # response, transport hiccup, id churn). HA retained discovery still targets the old
+            # safe_id — deleting here causes "Unknown toy" spam while entities look available.
+            for safe in list(self._toys.keys()):
+                if safe not in seen:
+                    self._publish_toy_availability(safe, False)
+                    stale = self._toys.get(safe)
+                    if isinstance(stale, dict):
+                        stale["status"] = "0"
+            self._inventory_ready = True
             await self._publish_discovery_unlocked()
 
     async def _publish_discovery_unlocked(self) -> None:
@@ -525,7 +670,7 @@ class HAMqttBridge:
             for disc_topic, payload in build_discovery_payloads(
                 topic_prefix=self._topic_prefix,
                 toy_dict=toy,
-                availability_topic=av,
+                bridge_availability_topic=av,
             ):
                 key = disc_topic
                 if key in self._published_discovery:
@@ -568,11 +713,20 @@ class HAMqttBridge:
         if len(parts) != 3 or parts[2] != "set":
             return
         safe_id, feature_segment, _ = parts
-        if self._lan is None:
+        if self._control is None:
             return
 
         toy = self._toys.get(safe_id)
         if toy is None:
+            self._publish_toy_availability(safe_id, False)
+            if not self._inventory_ready:
+                _logger.debug(
+                    "Ignoring command before first inventory refresh safe_id=%s topic=%s",
+                    safe_id,
+                    topic,
+                )
+                return
+            self._clear_discovery_for_stale_safe_id(safe_id)
             _logger.warning("Unknown toy safe_id=%s (topic=%s)", safe_id, topic)
             return
         toy_id = str(toy.get("id"))
@@ -584,7 +738,7 @@ class HAMqttBridge:
 
         try:
             if feature_segment == "stop":
-                await self._lan.stop(toy_id=toy_id)
+                await self._control.stop(toy_id=toy_id)
                 levels = self._feature_levels.setdefault(safe_id, {})
                 for action in features_for_toy(toy):
                     levels[action] = 0
@@ -595,13 +749,20 @@ class HAMqttBridge:
             if feature_segment == "preset":
                 if not text:
                     return
-                preset = text.lower()
-                valid = {str(p) for p in Presets}
+                raw = text.strip()
+                if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
+                    raw = raw[1:-1].strip()
+                preset = raw.lower()
+                valid = {p.value for p in Presets}
                 if preset not in valid:
                     _logger.warning("Invalid preset %r", text)
                     return
-                await self._lan.preset_request(preset, toy_id=toy_id)
                 await self._publish_state_str(safe_id, "preset", preset, force=True)
+                await self._control.preset_request(
+                    preset,
+                    toy_id=toy_id,
+                    wait_for_completion=False,
+                )
                 return
 
             action = topic_segment_to_action_name(feature_segment)
@@ -623,8 +784,19 @@ class HAMqttBridge:
                 for supported_action in features_for_toy(toy)
             }
             merged_actions[action] = level_i
-            await self._lan.function_request(merged_actions, toy_id=toy_id)
+            await self._control.function_request(merged_actions, toy_id=toy_id)
             levels.update(merged_actions)
             await self._publish_state_str(safe_id, feature_segment, str(level_i), force=True)
+        except LovenseBLEError as e:
+            if "not connected" in str(e).lower():
+                self._mark_toy_disconnected(safe_id)
+                _logger.warning(
+                    "Command ignored for disconnected toy id=%s topic=%s: %s",
+                    toy_id,
+                    topic,
+                    e,
+                )
+                return
+            _logger.exception("BLE command failed topic=%s", topic)
         except Exception:  # pylint: disable=broad-exception-caught
             _logger.exception("Command failed topic=%s", topic)

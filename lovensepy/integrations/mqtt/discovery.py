@@ -19,6 +19,9 @@ from .topics import (
     mqtt_safe_toy_id,
     state_topic,
 )
+from .topics import (
+    toy_availability_topic as mqtt_toy_availability_topic,
+)
 
 __all__ = [
     "discovery_object_id",
@@ -37,21 +40,40 @@ def re_safe_prefix(prefix: str) -> str:
     return prefix.strip("/").replace("/", "_").replace(" ", "_")
 
 
+def _ha_availability_entries(
+    bridge_availability_topic: str,
+    toy_availability: str | None,
+) -> list[dict[str, str]]:
+    """MQTT Discovery ``availability`` list (entity available only when all topics are online)."""
+    base = {"payload_available": "online", "payload_not_available": "offline"}
+    out: list[dict[str, str]] = [{"topic": bridge_availability_topic, **base}]
+    if toy_availability:
+        out.append({"topic": toy_availability, **base})
+    return out
+
+
 def build_discovery_payloads(
     *,
     topic_prefix: str,
     toy_dict: dict[str, Any],
-    availability_topic: str,
+    bridge_availability_topic: str,
+    per_toy_availability: bool = True,
 ) -> list[tuple[str, str]]:
     """
     Return list of (discovery_topic, json_config_string).
 
     ``toy_dict`` is a plain dict (e.g. from ``ToyInfo.model_dump()`` or toy-list).
+
+    By default each entity uses MQTT Discovery ``availability`` with the bridge topic and a
+    per-toy topic (see :func:`~lovensepy.integrations.mqtt.topics.toy_availability_topic`).
+    Set ``per_toy_availability=False`` for bridge-only availability (e.g. unit tests).
     """
     toy_id = str(toy_dict.get("id") or "")
     if not toy_id:
         return []
     safe = mqtt_safe_toy_id(toy_id)
+    toy_av = mqtt_toy_availability_topic(topic_prefix, safe) if per_toy_availability else None
+    av_entries = _ha_availability_entries(bridge_availability_topic, toy_av)
     display = toy_dict.get("nickName") or toy_dict.get("name") or toy_dict.get("toyType") or toy_id
     model = str(toy_dict.get("toyType") or toy_dict.get("name") or "")
 
@@ -81,9 +103,7 @@ def build_discovery_payloads(
             "max": hi,
             "step": step,
             "mode": "box",
-            "availability_topic": availability_topic,
-            "payload_available": "online",
-            "payload_not_available": "offline",
+            "availability": av_entries,
             "unique_id": f"lovensepy_{safe}_{seg}",
             "device": device,
         }
@@ -95,25 +115,24 @@ def build_discovery_payloads(
         "name": "Stop",
         "command_topic": command_topic(pfx, safe, "stop"),
         "payload_press": "PRESS",
-        "availability_topic": availability_topic,
-        "payload_available": "online",
-        "payload_not_available": "offline",
+        "availability": av_entries,
         "unique_id": f"lovensepy_{safe}_stop",
         "device": device,
     }
     out.append((discovery_topic("button", oid_stop), json.dumps(cfg_stop, separators=(",", ":"))))
 
     # --- Preset select ---
-    options = [str(p) for p in Presets]
+    options = [p.value for p in Presets]
     oid_preset = discovery_object_id(pfx, safe, "preset")
     cfg_preset = {
         "name": "Preset",
         "command_topic": command_topic(pfx, safe, "preset"),
         "state_topic": state_topic(pfx, safe, "preset"),
         "options": options,
-        "availability_topic": availability_topic,
-        "payload_available": "online",
-        "payload_not_available": "offline",
+        # Preset UART can run many seconds; echo state before the hold finishes so HA
+        # does not revert the select to unknown waiting for state_topic.
+        "optimistic": True,
+        "availability": av_entries,
         "unique_id": f"lovensepy_{safe}_preset",
         "device": device,
     }
@@ -128,9 +147,7 @@ def build_discovery_payloads(
         "unit_of_measurement": "%",
         "device_class": "battery",
         "state_class": "measurement",
-        "availability_topic": availability_topic,
-        "payload_available": "online",
-        "payload_not_available": "offline",
+        "availability": av_entries,
         "unique_id": f"lovensepy_{safe}_battery",
         "device": device,
     }

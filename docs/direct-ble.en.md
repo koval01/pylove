@@ -99,15 +99,17 @@ asyncio.run(main())
 
 ## Notes
 
-- **Built-in presets** (`pulse`, `wave`, `fireworks`, `earthquake`): over BLE the client sends **`Pat:{n};`** or **`Preset:{n};`** (integer **`n`**). Connect uses **`Pat`**; some firmware / UART docs expect **`Preset`**. Set the prefix with constructor **`ble_preset_uart_keyword`**. Names map via :data:`~lovensepy.PRESET_BLE_PAT_INDEX` (default **1–4**); you can also pass a **digit-only** ``name`` (0–20) for a raw slot. If the toy **ignores Pat/Preset** but **pattern stepping works**, use **`ble_preset_emulate_with_pattern=True`** or FastAPI **`LOVENSEPY_BLE_PRESET_EMULATE_PATTERN=1`** (reconnect after changing). Otherwise use **`/command/pattern`**. **FastAPI BLE** defaults to **`Preset`** on **`/ble/connect`**; **`LOVENSEPY_BLE_PRESET_UART=Pat`** switches to Connect-style **`Pat`**.
+- **Built-in presets** (`pulse`, `wave`, `fireworks`, `earthquake`): over BLE the client sends **`Pat:{n};`** or **`Preset:{n};`** (integer **`n`**). :class:`~lovensepy.ble_direct.client.BleDirectClient` defaults to **`Pat`**; some firmware / public UART docs expect **`Preset`**. Set the prefix with constructor **`ble_preset_uart_keyword`**. Names map via :data:`~lovensepy.PRESET_BLE_PAT_INDEX` (default **1–4**); you can also pass a **digit-only** ``name`` (0–20) for a raw slot. If the toy **ignores Pat/Preset** but **pattern stepping works**, use **`ble_preset_emulate_with_pattern=True`** or FastAPI **`LOVENSEPY_BLE_PRESET_EMULATE_PATTERN=1`** (reconnect after changing). Otherwise use **`/command/pattern`**. **FastAPI BLE** defaults to **`Preset`** on **`/ble/connect`**; **`LOVENSEPY_BLE_PRESET_UART=Pat`** switches to the same **`Pat`** keyword as the direct BLE client default.
 - **Several toys:** `discover_and_connect` registers each matching advertiser (default name prefix **`LVS-`**) and opens one `BleDirectClient` per address.
 - **macOS:** peripheral `connect` / discovery is **serialized** across clients to reduce CoreBluetooth flakiness.
 - **Sync timeouts:** `BleDirectHubSync` runs BLE on a background asyncio loop. Each call waits up to **`LOVENSEPY_BLE_SYNC_TIMEOUT`** seconds (default **300**; `0`, `none`, or `inf` = unbounded). Do **not** use `BleDirectHubSync` from code that already has a running asyncio loop — use `BleDirectHub` and `await` instead.
 - **Link loss:** by default the client may reconnect and send a UART stop burst; whether motors stop without UART is **firmware-dependent**. See **`silence_on_link_loss`** on `BleDirectClient` in the API reference.
+- **Errors & GATT retries:** [`LovenseBLEError`](api-reference.md#exceptions-and-error-handling) vs LAN auth/timeouts is covered in the API reference. For **transient** radio/GATT failures, pass **`gatt_write_max_attempts`** &gt; `1` and optional **`gatt_write_retry_*`** through **`add_toy` / `discover_and_connect`** as `**client_kwargs` — that retries individual TX writes with backoff (not a full session loop like Socket **`auto_reconnect`**; after a hard drop, call **`connect`** or **`discover_and_connect`** again).
 
 ## Where to read more
 
 - **Constructors, UART tuning, dual-motor behaviour:** [API reference — BleDirectClient / hub](api-reference.md#bledirectclient).
+- **Exception types and handling order:** [Exceptions and error handling](api-reference.md#exceptions-and-error-handling).
 - **Interactive scan / multi-select CLI:** `python examples/ble_direct_scan_and_two.py`.
 - **Hardware integration test** (real radio): `uv run --extra ble pytest tests/test_ble_direct_integration.py -v -s`.
 

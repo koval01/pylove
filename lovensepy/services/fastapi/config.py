@@ -44,19 +44,27 @@ class ServiceConfig(BaseModel):
     ble_scan_name_prefix: str | None = Field(default="LVS-")
     ble_advertisement_monitor: bool = Field(
         default=False,
-        description="If true (BLE mode), run optional background RSSI/advertisement callbacks.",
+        description=(
+            "If true (BLE mode), periodic background scans merge into GET /ble/advertisements. "
+            "With ServiceConfig.from_env(), defaults on in ble mode unless "
+            "LOVENSE_BLE_ADVERT_MONITOR is 0/false/off."
+        ),
     )
     ble_monitor_interval_sec: float = Field(
-        default=2.0,
+        default=10.0,
         ge=0.5,
-        le=60.0,
-        description="When advertisement monitor is on, periodic passive scan interval.",
+        le=120.0,
+        description=(
+            "When advertisement monitor is on, seconds between scan rounds "
+            "(after each scan finishes)."
+        ),
     )
     ble_preset_uart_keyword: str = Field(
         default="Preset",
         description=(
-            "BLE mode: UART prefix for built-in presets: Preset (public UART docs) or Pat "
-            "(Lovense Connect). Override with env LOVENSEPY_BLE_PRESET_UART."
+            "BLE mode: UART prefix for built-in presets — Preset (public UART docs) or Pat "
+            "(same default keyword as BleDirectClient). "
+            "Override with env LOVENSEPY_BLE_PRESET_UART."
         ),
     )
     ble_preset_emulate_pattern: bool = Field(
@@ -75,8 +83,17 @@ class ServiceConfig(BaseModel):
         mode: ServiceMode = mode_raw  # type: ignore[assignment]
         raw_toys = os.environ.get("LOVENSE_TOY_IDS", "")
         allowed_toy_ids = [item.strip() for item in raw_toys.split(",") if item.strip()]
-        monitor_raw = os.environ.get("LOVENSE_BLE_ADVERT_MONITOR", "").strip().lower()
-        advertisement_monitor = monitor_raw in ("1", "true", "yes", "on")
+        monitor_raw = os.environ.get("LOVENSE_BLE_ADVERT_MONITOR")
+        if monitor_raw is None:
+            advertisement_monitor = mode == "ble"
+        else:
+            s = monitor_raw.strip().lower()
+            if s in ("", "0", "false", "no", "off"):
+                advertisement_monitor = False
+            elif s in ("1", "true", "yes", "on"):
+                advertisement_monitor = True
+            else:
+                advertisement_monitor = mode == "ble"
         ble_uart_raw = (os.environ.get("LOVENSEPY_BLE_PRESET_UART") or "Preset").strip()
         emulate_raw = os.environ.get("LOVENSEPY_BLE_PRESET_EMULATE_PATTERN", "").strip().lower()
         ble_preset_emulate_pattern = emulate_raw in ("1", "true", "yes", "on")
@@ -91,7 +108,7 @@ class ServiceConfig(BaseModel):
             ble_scan_name_prefix=_ble_scan_prefix_from_env(),
             ble_advertisement_monitor=advertisement_monitor,
             ble_monitor_interval_sec=float(
-                os.environ.get("LOVENSE_BLE_ADVERT_MONITOR_INTERVAL", "2")
+                os.environ.get("LOVENSE_BLE_ADVERT_MONITOR_INTERVAL", "10")
             ),
             ble_preset_uart_keyword=ble_uart_raw,
             ble_preset_emulate_pattern=ble_preset_emulate_pattern,
@@ -116,9 +133,9 @@ class ServiceConfig(BaseModel):
 
         See :class:`~lovensepy.ble_direct.client.BleDirectClient`.
         """
-        raw = (self.ble_preset_uart_keyword or "Preset").strip().lower()
-        kw = "Preset" if raw == "preset" else "Pat"
-        out: dict[str, Any] = {"ble_preset_uart_keyword": kw}
-        if self.ble_preset_emulate_pattern:
-            out["ble_preset_emulate_with_pattern"] = True
-        return out
+        from lovensepy.ble_direct.client import ble_preset_connect_kwargs
+
+        return ble_preset_connect_kwargs(
+            uart_keyword_raw=self.ble_preset_uart_keyword,
+            emulate_pattern=self.ble_preset_emulate_pattern,
+        )

@@ -98,7 +98,7 @@ Thank you for your interest in contributing to LovensePy! This document provides
 - `tests/` — unit and integration tests
 - `docs/` — Markdown documentation (MkDocs source; published to [GitHub Pages](https://lovensepy.koval-dev.org/))
 - `mkdocs.yml` — MkDocs site configuration
-- Integration tests require env vars (see [docs/appendix.md — Tests](docs/appendix.md#tests))
+- Integration tests require env vars (see [docs/appendix.en.md — Tests](docs/appendix.en.md#tests))
 
 ### Documentation site
 

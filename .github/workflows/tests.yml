@@ -63,7 +63,9 @@ jobs:
         run: bandit -r lovensepy -f txt
 
       - name: Run semgrep
-        run: semgrep scan --config auto lovensepy --error
+        run: |
+          semgrep scan --config auto lovensepy --error \
+            --exclude-rule python.lang.compatibility.python37.python37-compatibility-importlib2
 
       - name: Check dependencies for vulnerabilities
         run: pip-audit

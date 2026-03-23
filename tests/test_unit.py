@@ -23,7 +23,7 @@ def test_presets_enum():
 
 
 def test_preset_ble_pat_index_default_slots():
-    """BLE UART Pat slot map for the four Remote names (Connect-style indices)."""
+    """BLE UART Pat/Preset slot map for the four Remote preset names."""
     assert PRESET_BLE_PAT_INDEX["pulse"] == 1
     assert PRESET_BLE_PAT_INDEX["wave"] == 2
     assert PRESET_BLE_PAT_INDEX["fireworks"] == 3

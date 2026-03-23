@@ -187,6 +187,7 @@ def test_discover_and_connect_registers_and_enriches():
                 assert len(ids) == 1
                 r = await h.get_toys(query_battery=False)
                 assert r.data and r.data.toys[0].version == "240"
+                assert r.data.toys[0].nickName == "Edge 2"
 
     asyncio.run(_run())
 
@@ -218,6 +219,69 @@ def test_get_toys_battery_fallback_from_enrich_cache():
                 await h.discover_and_connect(timeout=1.0, enrich_uart=True)
                 r = await h.get_toys(query_battery=True)
                 assert r.data and r.data.toys[0].battery == 42
+
+    asyncio.run(_run())
+
+
+def test_get_toys_marketing_name_override_for_gush2():
+    a = _mock_client()
+    a.fetch_ble_snapshot = AsyncMock(
+        return_value={
+            "battery_percent": 50,
+            "device_type": DeviceTypeFields(
+                model_letter="EZ",
+                firmware="62",
+                bt_addr_hex="00",
+                raw="EZ:62:00;",
+            ),
+            "suggested_features": ("Vibrate",),
+        }
+    )
+
+    async def _scan(*_a: object, **_k: object) -> list[tuple[str, str | None]]:
+        return [("AA:BB:CC:DD:EE:01", "LVS-Gush")]
+
+    async def _run() -> None:
+        with patch("lovensepy.ble_direct.hub.BleDirectClient", return_value=a):
+            with patch("lovensepy.ble_direct.hub.scan_lovense_ble_devices", _scan):
+                h = BleDirectHub()
+                await h.discover_and_connect(timeout=1.0, enrich_uart=True)
+                r = await h.get_toys(query_battery=False)
+                assert r.data and r.data.toys[0].nickName == "Gush 2"
+
+    asyncio.run(_run())
+
+
+def test_get_toys_generic_nickname_fallback_includes_ble_fields():
+    a = _mock_client()
+    a.fetch_ble_snapshot = AsyncMock(
+        return_value={
+            "battery_percent": 50,
+            "device_type": DeviceTypeFields(
+                model_letter="QQ",
+                firmware="62",
+                bt_addr_hex="00",
+                raw="QQ:62:00;",
+            ),
+            "suggested_features": ("Vibrate",),
+        }
+    )
+
+    async def _scan(*_a: object, **_k: object) -> list[tuple[str, str | None]]:
+        return [("AA:BB:CC:DD:EE:01", "LVS-Gush")]
+
+    async def _run() -> None:
+        with patch("lovensepy.ble_direct.hub.BleDirectClient", return_value=a):
+            with patch("lovensepy.ble_direct.hub.scan_lovense_ble_devices", _scan):
+                with patch(
+                    "lovensepy.ble_direct.branding_resolve.ble_marketing_name_overrides",
+                    return_value={},
+                ):
+                    h = BleDirectHub()
+                    await h.discover_and_connect(timeout=1.0, enrich_uart=True)
+                    r = await h.get_toys(query_battery=False)
+                    assert r.data
+                    assert r.data.toys[0].nickName == "Gush (series=gush, model=QQ, fw=62)"
 
     asyncio.run(_run())
 

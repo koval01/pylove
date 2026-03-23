@@ -37,7 +37,37 @@ theme:
         name: Switch to light mode
 
 plugins:
-  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: ru
+          name: Русский
+          build: true
+          site_description: Python-клиент для API Lovense
+          nav_translations:
+            Home: Главная
+            Changelog: История изменений
+            Installation: Установка
+            Connection methods: Способы подключения
+            Direct BLE: Прямой BLE
+            Tutorials: Руководства
+            LAN & BLE hub: Хаб LAN и BLE
+            Server + QR: Сервер и QR
+            Socket API: Socket API
+            Toy Events: События игрушек
+            Home Assistant MQTT: Home Assistant MQTT
+            FastAPI LAN REST: FastAPI LAN REST
+            API Reference: Справочник API
+            Appendix: Приложение
+  - search:
+      lang:
+        - en
+        - ru
 
 markdown_extensions:
   - attr_list

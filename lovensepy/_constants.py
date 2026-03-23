@@ -41,9 +41,9 @@ class Presets(StrEnum):
     EARTHQUAKE = "earthquake"
 
 
-# UART ``Pat:{n};`` indices for the four Remote presets (Lovense Connect sends ``Pat`` with an
-# integer, not ``Pat:pulse``). Some developer docs call this slot ``Preset:{n};`` — firmware
-# varies; indices may differ by toy generation.
+# UART ``Pat:{n};`` / ``Preset:{n};`` indices for the four Remote preset names (integer **n**, not
+# ``Pat:pulse``). Public UART documentation often uses ``Preset``; firmware and slot numbering
+# vary by model and revision.
 PRESET_BLE_PAT_INDEX: dict[str, int] = {
     Presets.PULSE.value: 1,
     Presets.WAVE.value: 2,

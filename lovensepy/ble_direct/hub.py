@@ -26,6 +26,7 @@ from lovensepy._models import (
 from lovensepy.exceptions import LovenseBLEError
 from lovensepy.standard.async_base import LovenseAsyncControlClient
 
+from .branding_resolve import resolve_ble_branding_nickname
 from .client import (
     BleDirectClient,
     _schedule_deferred_ble_coro,
@@ -73,6 +74,17 @@ def _toy_id_from_device_bt_mac(slug: str | None, bt_addr_hex: str) -> str | None
     if slug:
         return f"{slug}_{tail}"
     return f"toy_{tail}"
+
+
+def _display_name_from_entry(ent: _ToyEntry) -> str:
+    """Prefer clean marketing-ish name (without raw model/firmware noise)."""
+    name, _src = resolve_ble_branding_nickname(
+        advertised_name=ent.display_name,
+        toy_type_slug=ent.toy_type_slug,
+        model_letter=ent.model_letter,
+        firmware=ent.firmware,
+    )
+    return name
 
 
 async def _sleep_until_cancel_or_timeout(cancel: asyncio.Event, seconds: float) -> None:
@@ -250,6 +262,58 @@ class BleDirectHub(LovenseAsyncControlClient):
         for tid in list(self._toys.keys()):
             await self.remove_toy(tid)
 
+    async def enrich_toy_from_uart(
+        self,
+        toy_id: str,
+        *,
+        adv_name: str | None = None,
+    ) -> str:
+        """After :meth:`connect`, read UART (``DeviceType`` / battery) and refresh hub fields.
+
+        Used for ``GetToys`` (``version``, ``nickName``, ``type``, features). Pass
+        ``adv_name`` (e.g. ``LVS-Lush``) when known from a scan so ToyConfig slug /
+        branding resolves; if omitted, uses ``display_name`` when it differs from
+        ``toy_id``, else still queries UART so ``model_letter`` / ``firmware`` fill in.
+
+        Returns the toy id to use after a possible MAC-based rename (same as
+        :meth:`discover_and_connect`).
+        """
+        ent = self._toys.get(toy_id)
+        if ent is None or not ent.client.is_connected:
+            return toy_id
+        try:
+            adv = (adv_name or "").strip() or None
+            if adv is None:
+                dn = ent.display_name.strip()
+                if dn and dn != toy_id:
+                    adv = dn
+            if adv and adv.upper().startswith("LVS-"):
+                ent.display_name = adv
+                if sl := _slug_from_adv_name(adv):
+                    ent.toy_type_slug = ent.toy_type_slug or sl
+            snap = await ent.client.fetch_ble_snapshot(adv_name=adv)
+            dt = snap["device_type"]
+            ent.firmware = dt.firmware
+            ent.model_letter = dt.model_letter
+            ent.suggested_features = tuple(snap.get("suggested_features") or ())
+            bp = snap.get("battery_percent")
+            ent.battery_percent = int(bp) if isinstance(bp, int) else None
+            slug = (_slug_from_adv_name(adv) if adv else None) or ent.toy_type_slug
+            preferred = _toy_id_from_device_bt_mac(slug, dt.bt_addr_hex)
+            cur = toy_id
+            if preferred and preferred != cur and preferred not in self._toys:
+                self._toys[preferred] = self._toys.pop(cur)
+                cur = preferred
+            return cur
+        except Exception:
+            _logger.debug(
+                "UART enrichment failed for toy %r (adv_name=%r):",
+                toy_id,
+                adv_name,
+                exc_info=True,
+            )
+            return toy_id
+
     async def discover_and_connect(
         self,
         *,
@@ -284,27 +348,7 @@ class BleDirectHub(LovenseAsyncControlClient):
         if enrich_uart and self._toys:
             for _tid, ent in list(self._toys.items()):
                 adv = ent.display_name if ent.display_name and ent.display_name != _tid else None
-                if not adv:
-                    continue
-                try:
-                    snap = await ent.client.fetch_ble_snapshot(adv_name=adv)
-                    dt = snap["device_type"]
-                    ent.firmware = dt.firmware
-                    ent.model_letter = dt.model_letter
-                    ent.suggested_features = tuple(snap.get("suggested_features") or ())
-                    bp = snap.get("battery_percent")
-                    ent.battery_percent = int(bp) if isinstance(bp, int) else None
-                    slug = _slug_from_adv_name(adv) or ent.toy_type_slug
-                    preferred = _toy_id_from_device_bt_mac(slug, dt.bt_addr_hex)
-                    if preferred and preferred != _tid and preferred not in self._toys:
-                        self._toys[preferred] = self._toys.pop(_tid)
-                except Exception:
-                    _logger.debug(
-                        "UART enrichment failed for toy %r (adv=%r):",
-                        _tid,
-                        adv,
-                        exc_info=True,
-                    )
+                await self.enrich_toy_from_uart(_tid, adv_name=adv)
         for _tid, ent in list(self._toys.items()):
             if not ent.client.is_connected:
                 continue
@@ -658,6 +702,7 @@ class BleDirectHub(LovenseAsyncControlClient):
             row: dict[str, Any] = {
                 "id": tid,
                 "name": ent.display_name,
+                "nickName": _display_name_from_entry(ent),
                 "status": "1" if connected else "0",
             }
             if ent.toy_type_slug:

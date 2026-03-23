@@ -19,6 +19,8 @@ from lovensepy.ble_direct.client import (
     DEFAULT_UART_TX_UUIDS,
     BleDirectClient,
     _slug_from_adv_name,
+    ble_direct_client_preset_kwargs_from_env,
+    ble_preset_connect_kwargs,
     discover_uart_rx_notify,
     discover_writable_uart_tx,
 )
@@ -28,6 +30,31 @@ from lovensepy.ble_direct.uart_catalog import default_full_stop_payloads
 
 def _svc(chars: list[SimpleNamespace]) -> SimpleNamespace:
     return SimpleNamespace(characteristics=chars)
+
+
+def test_ble_preset_connect_kwargs_matches_fastapi_defaults():
+    assert ble_preset_connect_kwargs(uart_keyword_raw=None, emulate_pattern=False) == {
+        "ble_preset_uart_keyword": "Preset",
+    }
+    assert ble_preset_connect_kwargs(uart_keyword_raw="Pat", emulate_pattern=True) == {
+        "ble_preset_uart_keyword": "Pat",
+        "ble_preset_emulate_with_pattern": True,
+    }
+
+
+def test_ble_direct_client_preset_kwargs_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LOVENSEPY_BLE_PRESET_UART", raising=False)
+    monkeypatch.delenv("LOVENSEPY_BLE_PRESET_EMULATE_PATTERN", raising=False)
+    assert ble_direct_client_preset_kwargs_from_env() == {"ble_preset_uart_keyword": "Preset"}
+
+    monkeypatch.setenv("LOVENSEPY_BLE_PRESET_UART", "Pat")
+    assert ble_direct_client_preset_kwargs_from_env() == {"ble_preset_uart_keyword": "Pat"}
+
+    monkeypatch.setenv("LOVENSEPY_BLE_PRESET_EMULATE_PATTERN", "1")
+    assert ble_direct_client_preset_kwargs_from_env() == {
+        "ble_preset_uart_keyword": "Pat",
+        "ble_preset_emulate_with_pattern": True,
+    }
 
 
 def test_discover_explicit_uuid_ok():
@@ -805,3 +832,51 @@ def test_slug_from_adv_name_no_space_before_underscore_in_toy_id():
     tid = make_ble_toy_id("AA:BB:CC:DD:EE:FF", "LVS-Edge 2", 0)
     assert " " not in tid
     assert tid.startswith("edge_")
+
+
+def test_gatt_write_resilient_retries_transient_oserror():
+    client_cls, instance = _mock_ble_stack()
+    n = {"c": 0}
+
+    async def flaky_write(u: str, data: bytes, response: bool = False) -> None:
+        n["c"] += 1
+        if n["c"] < 3:
+            raise OSError(5, "EIO")
+
+    instance.write_gatt_char = AsyncMock(side_effect=flaky_write)
+
+    async def _run() -> None:
+        with patch("lovensepy.ble_direct.client._bleak_client_cls", return_value=client_cls):
+            c = BleDirectClient(
+                "addr",
+                gatt_write_max_attempts=5,
+                gatt_write_retry_base_delay=0.0,
+                gatt_write_retry_max_delay=0.0,
+            )
+            await c.connect()
+            await c.send_uart_bytes(b"X;", reset_dual_motor_route=False)
+            await c.disconnect()
+
+    asyncio.run(_run())
+    assert n["c"] == 3
+
+
+def test_gatt_write_resilient_no_retry_on_value_error():
+    client_cls, instance = _mock_ble_stack()
+    instance.write_gatt_char = AsyncMock(side_effect=ValueError("not transient"))
+
+    async def _run() -> None:
+        with patch("lovensepy.ble_direct.client._bleak_client_cls", return_value=client_cls):
+            c = BleDirectClient(
+                "addr",
+                gatt_write_max_attempts=5,
+                gatt_write_retry_base_delay=0.0,
+                gatt_write_retry_max_delay=0.0,
+            )
+            await c.connect()
+            with pytest.raises(LovenseBLEError, match="not transient"):
+                await c.send_uart_bytes(b"X;", reset_dual_motor_route=False)
+            await c.disconnect()
+
+    asyncio.run(_run())
+    assert instance.write_gatt_char.await_count == 1

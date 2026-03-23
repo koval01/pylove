@@ -96,6 +96,41 @@ def test_service_config_ble_connect_client_kwargs_explicit_pat() -> None:
     assert cfg.ble_connect_client_kwargs()["ble_preset_uart_keyword"] == "Pat"
 
 
+def test_ble_branding_resolve_lush_firmware_generation() -> None:
+    cfg = ServiceConfig(mode="ble")
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        r = client.post(
+            "/ble/branding/resolve",
+            json={
+                "advertised_name": "LVS-Lush",
+                "toy_type_slug": "lush",
+                "device_type_letter": "S",
+                "firmware": "145",
+            },
+        )
+        assert r.status_code == 200
+        assert r.json() == {"nickName": "Lush 3", "source": "toy_config_firmware"}
+
+
+def test_ble_branding_resolve_gush_flat_map_without_firmware() -> None:
+    cfg = ServiceConfig(mode="ble")
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        r = client.post(
+            "/ble/branding/resolve",
+            json={
+                "advertised_name": "LVS-Gush",
+                "toy_type_slug": "gush",
+                "device_type_letter": "ED",
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["nickName"] == "Gush 2"
+        assert body["source"] == "toy_config_flat_map"
+
+
 def test_ble_scan_merges_into_advertisements_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

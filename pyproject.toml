@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lovensepy"
-version = "1.1.0"
+version = "1.1.1"
 description = "Python Lovense API client"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -58,6 +58,7 @@ dev = [
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
+    "mkdocs-static-i18n>=1.3.0",
     "pymdown-extensions>=10.0",
 ]
 
@@ -88,6 +89,10 @@ known-first-party = ["lovensepy"]
 
 [tool.setuptools.package-data]
 lovensepy = ["py.typed"]
+"lovensepy.ble_direct" = [
+    "toy_config_ble_marketing.json",
+    "toy_config_ble_marketing_firmware.json",
+]
 
 [tool.setuptools.packages.find]
 include = ["lovensepy*"]

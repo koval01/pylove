@@ -20,6 +20,7 @@ __pycache__/
 # Distribution / packaging
 build/
 dist/
+local/
 
 # MkDocs
 /site/

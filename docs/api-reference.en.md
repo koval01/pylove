@@ -406,6 +406,11 @@ BleDirectClient(
     post_timed_function_silence_cooldown_s: float = 0.22,
     dual_single_channel_prime_peer_zero: bool = True,
     dual_single_channel_prime_delay_s: float = 0.045,
+    ble_preset_uart_keyword: str = "Pat",
+    ble_preset_emulate_with_pattern: bool = False,
+    gatt_write_max_attempts: int = 1,
+    gatt_write_retry_base_delay: float = 0.2,
+    gatt_write_retry_max_delay: float = 2.0,
 )
 ```
 
@@ -422,6 +427,11 @@ BleDirectClient(
 | `post_timed_function_silence_cooldown_s` | After :meth:`function_request` with ``time > 0``, the client calls :meth:`silence_all_motors` then waits this many seconds before returning (default :data:`DEFAULT_POST_TIMED_FUNCTION_SILENCE_COOLDOWN_S`, ~220 ms). Helps the **next** command apply on some BLE stacks. Use `0` to disable. |
 | `dual_single_channel_prime_peer_zero` | For toys with **both** ``Vibrate1`` and ``Vibrate2``, when a logical update maps to a **single** non-zero motor line **and** the last non-zero motor (tracked across :meth:`silence_all_motors`) was the **peer**, send that peer as ``…:0;`` in a **separate** preceding GATT write (default on). Avoids priming on every step (which could feel “one step behind” on some firmware). Set ``False`` to disable. Raw :meth:`send_uart_command` clears the motor memory. |
 | `dual_single_channel_prime_delay_s` | Seconds to wait after the peer-zero prime write and before the main line (default :data:`DEFAULT_DUAL_SINGLE_CHANNEL_PRIME_DELAY_S`, ~45 ms). Use ``0`` to omit the delay (still two writes). |
+| `ble_preset_uart_keyword` | UART keyword for presets: `Pat` or `Preset`. |
+| `ble_preset_emulate_with_pattern` | If true, map app preset names to stepped patterns over UART when firmware ignores Pat/Preset lines. |
+| `gatt_write_max_attempts` | How many times to attempt each GATT TX write on transient errors (`BleakError`, timeouts, some `OSError`). Default `1` = no retry. |
+| `gatt_write_retry_base_delay` | Initial backoff delay in seconds between retries (exponential, capped by `gatt_write_retry_max_delay`). |
+| `gatt_write_retry_max_delay` | Maximum delay between GATT write retries. |
 
 #### Methods and properties
 
@@ -481,7 +491,9 @@ Or skip manual addresses: ``await hub.discover_and_connect(timeout=10.0)`` scans
 
 ### HAMqttBridge
 
-MQTT bridge for **Home Assistant** (MQTT Discovery). Uses `AsyncLANClient` for commands and `ToyEventsClient` for battery / strength updates. **Requires** optional dependency `paho-mqtt` (`pip install 'lovensepy[mqtt]'`).
+MQTT bridge for **Home Assistant** (MQTT Discovery). Commands go through :class:`~lovensepy.standard.async_base.LovenseAsyncControlClient` — either :class:`~lovensepy.standard.async_lan.AsyncLANClient` (**`transport="lan"`**) or :class:`~lovensepy.ble_direct.hub.BleDirectHub` (**`transport="ble"`**). Optional :class:`~lovensepy.toy_events.client.ToyEventsClient` is used **only in LAN mode** for live battery / strength when `use_toy_events=True`.
+
+**Requires** `paho-mqtt` (`pip install 'lovensepy[mqtt]'`). BLE transport also needs `bleak` (`pip install 'lovensepy[ble]'`).
 
 Import: `from lovensepy import HAMqttBridge` (lazy-loaded) or `from lovensepy.integrations.mqtt import HAMqttBridge`.
 
@@ -492,7 +504,8 @@ HAMqttBridge(
     mqtt_host: str,
     mqtt_port: int = 1883,
     *,
-    lan_ip: str,
+    lan_ip: str | None = None,
+    transport: Literal["lan", "ble"] = "lan",
     lan_port: int = 20011,
     toy_events_port: int | None = None,
     app_name: str = "lovensepy_ha",
@@ -503,24 +516,33 @@ HAMqttBridge(
     refresh_interval: float = 45.0,
     use_https: bool = False,
     use_toy_events: bool = True,
+    ble_discover_timeout: float = 15.0,
+    ble_name_prefix: str | None = "LVS-",
+    ble_enrich_uart: bool = True,
+    ble_client_kwargs: dict[str, Any] | None = None,
+    ble_hub: BleDirectHub | None = None,
 )
 ```
 
 | Parameter | Description |
 |-----------|-------------|
 | `mqtt_host`, `mqtt_port` | MQTT broker (Home Assistant integration uses the same broker). |
-| `lan_ip`, `lan_port` | Lovense Remote Game Mode HTTP API (`/command`). |
-| `toy_events_port` | Toy Events WebSocket (default: same as `lan_port`, usually 20011). |
+| `transport` | `"lan"` (Game Mode HTTP) or `"ble"` (direct BLE hub). |
+| `lan_ip`, `lan_port` | Required when `transport="lan"`: Lovense Remote Game Mode HTTP API (`/command`). |
+| `toy_events_port` | Toy Events WebSocket (default: same as `lan_port`, usually 20011). LAN only. |
 | `topic_prefix` | Base prefix for state/command topics and discovery device grouping. |
-| `use_toy_events` | If False, only polling `GetToys` is used (no live battery/strength). |
+| `use_toy_events` | LAN only: if False, only polling `GetToys` is used (no live battery/strength). Ignored when `transport="ble"`. |
+| `ble_discover_timeout` | BLE: scan listen time for `discover_and_connect` when `ble_hub` is not passed. |
+| `ble_name_prefix`, `ble_enrich_uart`, `ble_client_kwargs` | Passed to :meth:`~lovensepy.ble_direct.hub.BleDirectHub.discover_and_connect`. |
+| `ble_hub` | Optional pre-built hub (`transport="ble"` only); if omitted, the bridge creates one and runs discovery on `start()`. |
 
 #### Methods and properties
 
 | Method / property | Description |
 |-------------------|-------------|
-| `async start()` | Connect MQTT, subscribe, publish discovery, start refresh + Toy Events tasks. |
-| `async stop()` | Cancel tasks, publish `offline`, disconnect. |
-| `availability_topic` | Retained bridge status topic (e.g. `lovensepy/bridge/status`). |
+| `async start()` | Connect MQTT, open transport (LAN client or BLE scan/connect), subscribe, publish discovery, start refresh (+ Toy Events in LAN mode when enabled). |
+| `async stop()` | Cancel tasks, publish `offline`, disconnect MQTT, `aclose` the control client. |
+| `availability_topic` | Retained bridge status topic (e.g. `lovensepy/bridge/status`). Entities also use per-toy `…/<safe_toy_id>/device_availability` (see MQTT Discovery `availability` list). |
 
 ---
 
@@ -561,6 +583,85 @@ player = AsyncPatternPlayer(client, toys)
 await player.play_sine_wave("T123", "Vibrate1", duration_sec=5)
 await player.stop("T123")
 ```
+
+---
+
+### Exceptions and error handling {: #exceptions-and-error-handling }
+
+All types live in `lovensepy.exceptions` and are re-exported from `lovensepy`. Network-related subclasses attach **`endpoint`** (URL or logical name) and optional **`payload`** (the command dict sent, when useful for logging).
+
+**Hierarchy**
+
+```text
+LovenseError
+└── LovenseNetworkError          # .endpoint, .payload
+    ├── LovenseAuthError         # HTTP 401 / 403 (wrong token, forbidden)
+    ├── LovenseDeviceOfflineError
+    │   ├── LovenseTimeoutError  # HTTP client timeout (httpx)
+    │   └── LovenseBLEError      # BLE / GATT, missing bleak, not connected
+    └── LovenseResponseParseError
+```
+
+**How to tell errors apart (LAN / Server HTTP)**
+
+| Situation | Exception | Notes |
+|-----------|-----------|--------|
+| Wrong or expired developer token, forbidden | `LovenseAuthError` | From `HttpTransport` / async transport on status **401** or **403**. |
+| App unreachable, connection refused, DNS failure | `LovenseDeviceOfflineError` | `httpx.ConnectError` → not the same as timeout. |
+| Request took too long | `LovenseTimeoutError` | Subclass of `LovenseDeviceOfflineError` — use `isinstance(e, LovenseTimeoutError)` **before** the parent if you want separate handling. |
+| Other HTTP failures (non-200 not 401/403) | `LovenseNetworkError` | Generic transport/HTTP issue. |
+| Body is not valid JSON | `LovenseResponseParseError` | |
+
+**BLE**
+
+Most failures are `LovenseBLEError` (subclass of `LovenseDeviceOfflineError`): not connected, unknown toy id on the hub, missing UART TX, `bleak` errors wrapped for GATT, and library-side timeouts (messages often contain `timed out`). There is **no** separate BLE auth type — pairing/security is outside this client.
+
+**Socket API**
+
+Command/send paths can raise `LovenseDeviceOfflineError` when the socket path treats the session as down; lower layers still use `LovenseError` in some cases. Prefer `except LovenseError` as a wide net, then narrow by type.
+
+**Handling pattern**
+
+Catch **more specific** types first, then `LovenseNetworkError`, then `LovenseError`:
+
+```python
+from lovensepy import (
+    LovenseAuthError,
+    LovenseBLEError,
+    LovenseDeviceOfflineError,
+    LovenseError,
+    LovenseResponseParseError,
+    LovenseTimeoutError,
+)
+
+try:
+    await client.function_request({...}, time=1)
+except LovenseAuthError:
+    # Refresh token / fix Dashboard credentials
+    ...
+except LovenseTimeoutError:
+    # HTTP took too long — retry or increase client timeout
+    ...
+except LovenseBLEError:
+    # Radio / GATT — reconnect, adjust gatt_write_max_attempts, check Remote not holding BLE
+    ...
+except LovenseResponseParseError:
+    # Unexpected JSON — log payload, report upstream change
+    ...
+except LovenseDeviceOfflineError:
+    # Reachability (includes BLE subclass unless caught above)
+    ...
+except LovenseError:
+    # Any other library error
+    ...
+```
+
+**BLE resilience vs Socket `auto_reconnect`**
+
+- **Socket API:** `SocketAPIClient.start_background(auto_reconnect=True)` keeps the **session** alive across disconnects (long-lived WebSocket).
+- **BLE:** `silence_on_link_loss` on `BleDirectClient` performs a **one-shot** reconnect only to send a **stop** burst after an unexpected drop; it does not replay your commands.
+- **GATT writes:** set `gatt_write_max_attempts` &gt; `1` (and optional delay kwargs) on `BleDirectClient` so individual `write_gatt_char` calls retry on transient `BleakError` / timeout / OS errors. Pass the same kwargs through `BleDirectHub.add_toy(..., **client_kwargs)` or `discover_and_connect(**client_kwargs)`.
+- **Session lost:** call `await client.connect()` again, or `await hub.discover_and_connect(...)` after a failure; wrap in your own backoff if the link is often flaky.
 
 ---
 

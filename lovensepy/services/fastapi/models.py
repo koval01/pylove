@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from lovensepy import Actions, Presets
 from lovensepy._constants import FUNCTION_RANGES
@@ -165,13 +165,42 @@ class StopFeaturesBatchBody(BaseModel):
     items: list[StopFeatureBatchItem] = Field(..., min_length=1)
 
 
+class BleBrandingResolveBody(BaseModel):
+    """Dry-run the same resolver used for ``GetToys`` → ``nickName`` (BLE hub)."""
+
+    advertised_name: str | None = Field(
+        default=None,
+        description="Advertised GAP name, e.g. LVS-Lush (optional).",
+    )
+    toy_type_slug: str | None = Field(
+        default=None,
+        description="Series slug from LVS- name / hub registration, e.g. lush.",
+    )
+    device_type_letter: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("device_type_letter", "model_letter"),
+        description="UART DeviceType model letter (e.g. S). Alias: model_letter.",
+    )
+    firmware: str | None = Field(
+        default=None,
+        description="UART DeviceType firmware field (digits), e.g. 145.",
+    )
+
+
 class BleConnectBody(BaseModel):
     address: str = Field(..., min_length=1, description="BLE address from scan.")
     toy_id: str | None = Field(
         default=None,
         description="Stable id for API; if omitted, derived from address and name.",
     )
-    name: str | None = Field(default=None, description="Advertised name (e.g. LVS-…).")
+    name: str | None = Field(
+        default=None,
+        description=(
+            "GAP advertised name (e.g. LVS-…). If omitted, the server tries "
+            "**GET /ble/advertisements** / last **POST /ble/scan** cache by address "
+            "so ToyConfig branding and UART enrichment still work."
+        ),
+    )
     toy_type: str | None = Field(
         default=None,
         description="Type slug for UART routing (often inferred from LVS- name).",

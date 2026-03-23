@@ -22,7 +22,8 @@ BLE mode:
 
 - ``LOVENSE_SERVICE_MODE=ble``
 - Optional: ``LOVENSE_BLE_SCAN_TIMEOUT``, ``LOVENSE_BLE_SCAN_PREFIX`` (empty = all names),
-  ``LOVENSE_BLE_ADVERT_MONITOR``, ``LOVENSE_BLE_ADVERT_MONITOR_INTERVAL``
+  ``LOVENSE_BLE_ADVERT_MONITOR`` (default on in ble; set ``0`` to disable),
+  ``LOVENSE_BLE_ADVERT_MONITOR_INTERVAL`` (default 10 seconds)
 """
 
 from __future__ import annotations

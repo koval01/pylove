@@ -41,7 +41,7 @@ client.function_request({Actions.VIBRATE1: 5, Actions.VIBRATE2: 10}, time=3)
 client.preset_request(Presets.PULSE, time=5)
 ```
 
-**Direct BLE:** the hub/client still take the same `Presets` names, but UART uses **`Pat:{n};`** or **`Preset:{n};`** with an integer **n** — not `Pat:pulse`. :class:`~lovensepy.ble_direct.client.BleDirectClient` defaults to **`Pat`** (Lovense Connect); the **FastAPI BLE** service defaults to **`Preset`** when toys are added via **`/ble/connect`** (override with **`LOVENSEPY_BLE_PRESET_UART`**). The default name→**n** map is `PRESET_BLE_PAT_INDEX` (typically pulse=1 … earthquake=4); slot numbers can differ by firmware.
+**Direct BLE:** the hub/client still take the same `Presets` names, but UART uses **`Pat:{n};`** or **`Preset:{n};`** with an integer **n** — not `Pat:pulse`. :class:`~lovensepy.ble_direct.client.BleDirectClient` defaults to **`Pat`**; the **FastAPI BLE** service defaults to **`Preset`** when toys are added via **`/ble/connect`** (override with **`LOVENSEPY_BLE_PRESET_UART`**). The default name→**n** map is `PRESET_BLE_PAT_INDEX` (typically pulse=1 … earthquake=4); slot numbers can differ by firmware.
 
 ---
 
@@ -116,7 +116,7 @@ sequenceDiagram
 
 ### Architecture
 
-- **Clients**: LANClient, ServerClient, SocketAPIClient, ToyEventsClient, HAMqttBridge — command building, protocols, MQTT bridge
+- **Clients**: LANClient, ServerClient, SocketAPIClient, ToyEventsClient, HAMqttBridge (LAN or BLE control) — command building, protocols, MQTT bridge
 - **Transport**: HttpTransport (POST JSON), WsTransport (WebSocket)
 - **Security**: Certificate fingerprint verification for HTTPS (port 30011) when `verify_ssl=False`
 

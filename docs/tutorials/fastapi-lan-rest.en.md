@@ -51,7 +51,7 @@ Use direct BLE instead of Game Mode. Toys are **not** auto-connected: scan, then
 export LOVENSE_SERVICE_MODE=ble
 # optional: LOVENSE_BLE_SCAN_TIMEOUT=8 LOVENSE_BLE_SCAN_PREFIX=LVS-  (empty prefix = all names)
 # optional passive RSSI-style updates: LOVENSE_BLE_ADVERT_MONITOR=1 LOVENSE_BLE_ADVERT_MONITOR_INTERVAL=2
-# optional presets: LOVENSEPY_BLE_PRESET_UART=Pat   (Connect-style; service default is Preset for /command/preset)
+# optional presets: LOVENSEPY_BLE_PRESET_UART=Pat   (BleDirectClient default; service default is Preset for /command/preset)
 # optional: LOVENSEPY_BLE_PRESET_EMULATE_PATTERN=1  (pulse/wave/… via pattern if UART preset lines ignored)
 uvicorn lovensepy.services.fastapi.app:app --host 0.0.0.0 --port 8000
 ```
@@ -72,7 +72,7 @@ Open `http://127.0.0.1:8000/docs` and try `GET /toys`, `POST /command/preset`, `
 
 ## Behavior notes
 
-- **BLE:** Patterns (and looped ``Function``) may hold work open while :class:`~lovensepy.ble_direct.client.BleDirectClient` steps UART timing. **Presets** from this service default to UART ``Preset:{n};`` (set ``LOVENSEPY_BLE_PRESET_UART=Pat`` for Lovense Connect parity). With ``LOVENSEPY_BLE_PRESET_EMULATE_PATTERN=1``, the four app names use pattern stepping instead (same idea as ``/command/pattern``). Timed presets still defer the hold + stop burst when the service passes ``wait_for_completion=False``. Direct :class:`~lovensepy.ble_direct.client.BleDirectClient` calls default to ``wait_for_completion=True``.
+- **BLE:** Patterns (and looped ``Function``) may hold work open while :class:`~lovensepy.ble_direct.client.BleDirectClient` steps UART timing. **Presets** from this service default to UART ``Preset:{n};`` (set ``LOVENSEPY_BLE_PRESET_UART=Pat`` to match the direct BLE client default). With ``LOVENSEPY_BLE_PRESET_EMULATE_PATTERN=1``, the four app names use pattern stepping instead (same idea as ``/command/pattern``). Timed presets still defer the hold + stop burst when the service passes ``wait_for_completion=False``. Direct :class:`~lovensepy.ble_direct.client.BleDirectClient` calls default to ``wait_for_completion=True``.
 - Sending the **same** preset or pattern again for the same toy **extends** the session and **issues another transport command** with the new `time` (Lovense stops after each command’s `timeSec` otherwise).
 - `GET /tasks` returns **function** rows (`kind: function`), **function_loop** rows when `POST /command/function` uses `loop_on_time` / `loop_off_time`, and **preset** / **pattern** rows (`kind: preset` / `pattern`). Timestamps include `started_at` (UTC) and `started_monotonic_sec` for stable `remaining_sec` calculations.
 
