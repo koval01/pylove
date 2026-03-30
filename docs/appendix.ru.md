@@ -137,7 +137,7 @@ sequenceDiagram
 | `examples/server_api.py` | Server API с token и uid |
 | `examples/socket_api_full.py` | Socket API: QR и отправка команд |
 | `examples/toy_events_full.py` | Toy Events — события в реальном времени |
-| `examples/ha_mqtt_bridge.py` | MQTT-мост Home Assistant (Game Mode + брокер) |
+| `lovensepy.services.mqtt_bridge` / `lovensepy-mqtt` | Сервис MQTT-моста Home Assistant (Game Mode или BLE + брокер); `examples/ha_mqtt_bridge.py` — обёртка |
 | `examples/ble_direct_scan_and_two.py` | BLE CLI: скан (имена по умолчанию **LVS-**), интерактивный мультивыбор (`pick`) или `--no-tui` + номера; тест pulse; опционально **`--wave`** — синус по игрушке / моторам / всем |
 | `examples/ble_direct_preset_multi.py` | Прямой BLE: один и тот же **пресет** (`pulse` / `wave` / …) на **любое число** адресов параллельно (`asyncio.gather`) — один адрес или много; для **одного хаба** используйте `BleDirectHub` (см. [Прямой BLE](direct-ble.md)) |
 | `examples/ble_direct_send_uart_once.py` | Прямой BLE: подключиться к одной игрушке, отправить одну «сырую» UART-команду и отключиться (диагностика/ручные команды) |

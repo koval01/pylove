@@ -16,7 +16,7 @@ Before using LovensePy, ensure you have:
 - **Standard API Server**: Function, Pattern, Preset via Lovense cloud; `get_qr_code` for QR pairing
 - **Standard Socket API**: getToken, getSocketUrl, WebSocket client for QR flow and remote control
 - **Toy Events API**: Real-time events (toy-list, button-down, function-strength-changed, etc.)
-- **Home Assistant MQTT bridge** (optional): MQTT Discovery + control via local Game Mode (`pip install 'lovensepy[mqtt]'`)
+- **Home Assistant MQTT bridge** (optional): MQTT Discovery + control via LAN or BLE — service `lovensepy.services.mqtt_bridge` / CLI `lovensepy-mqtt` (`pip install 'lovensepy[mqtt]'`, add `[ble]` for BLE)
 - **Direct BLE** (optional): `BleDirectHubSync` / `BleDirectHub` / `BleDirectClient` — see [Direct BLE](direct-ble.md)
 - **FastAPI service** (`lovensepy.services.fastapi`, optional extra `[service]`): HTTP REST + OpenAPI `/docs` for Game Mode or BLE — see [FastAPI tutorial](tutorials/fastapi-lan-rest.md). Example shim: `examples/fastapi_lan_api.py`.
 
@@ -31,6 +31,8 @@ MQTT / Home Assistant bridge (installs `paho-mqtt`):
 ```bash
 pip install 'lovensepy[mqtt]'
 ```
+
+Run the bridge: `python -m lovensepy.services.mqtt_bridge` or `lovensepy-mqtt` (see [Home Assistant MQTT tutorial](tutorials/home-assistant-mqtt.md)).
 
 Direct BLE (installs `bleak` and `pick` for the interactive BLE example menu):
 

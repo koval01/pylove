@@ -1,0 +1,8 @@
+# Minimal Home Assistant config for the LovensePy + Mosquitto stack.
+# The MQTT broker container is reachable as hostname: mqtt (port 1883).
+#
+# After first login: Settings → Devices & services → Add integration → MQTT.
+# Use broker = mqtt, port = 1883, no TLS and no auth (same as compose/mosquitto.conf).
+# Do not use 127.0.0.1 here — inside Docker that is the HA container, not Mosquitto.
+
+default_config:

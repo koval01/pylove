@@ -1,0 +1,4 @@
+# Home Assistant runtime files under /config — do not commit except configuration.yaml
+*
+!configuration.yaml
+!.gitignore

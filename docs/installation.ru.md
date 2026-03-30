@@ -16,7 +16,7 @@
 - **Standard API Server**: Function, Pattern, Preset через облако Lovense; `get_qr_code` для сопряжения по QR
 - **Standard Socket API**: getToken, getSocketUrl, WebSocket-клиент для сценария с QR и удалённого управления
 - **Toy Events API**: события в реальном времени (toy-list, button-down, function-strength-changed и т.д.)
-- **MQTT-мост Home Assistant** (опционально): MQTT Discovery + управление через локальный Game Mode (`pip install 'lovensepy[mqtt]'`)
+- **MQTT-мост Home Assistant** (опционально): MQTT Discovery + управление по LAN или BLE — сервис `lovensepy.services.mqtt_bridge` / CLI `lovensepy-mqtt` (`pip install 'lovensepy[mqtt]'`, для BLE добавьте `[ble]`)
 - **Прямой BLE** (опционально): `BleDirectHubSync` / `BleDirectHub` / `BleDirectClient` — см. [Прямой BLE](direct-ble.md)
 - **Сервис FastAPI** (`lovensepy.services.fastapi`, опциональный extra `[service]`): HTTP REST + OpenAPI `/docs` для Game Mode или BLE — см. [руководство FastAPI](tutorials/fastapi-lan-rest.md). Пример-обёртка: `examples/fastapi_lan_api.py`.
 
@@ -31,6 +31,8 @@ MQTT / мост Home Assistant (ставит `paho-mqtt`):
 ```bash
 pip install 'lovensepy[mqtt]'
 ```
+
+Запуск моста: `python -m lovensepy.services.mqtt_bridge` или `lovensepy-mqtt` (см. [руководство MQTT Home Assistant](tutorials/home-assistant-mqtt.md)).
 
 Прямой BLE (ставит `bleak` и `pick` для интерактивного меню BLE-примера):
 

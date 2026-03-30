@@ -10,6 +10,67 @@
 - **BLE-режим:** Bluetooth-адаптер на хосте с мостом; игрушки должны быть доступны ОС (часто **эксклюзивно** с BLE-связью Remote). Установите `pip install 'lovensepy[mqtt,ble]'` (или `[mqtt]` + `[ble]`).
 - `pip install 'lovensepy[mqtt]'` (добавьте `ble` для BLE-транспорта)
 
+## Home Assistant с BLE (полная схема)
+
+BLE идёт через **Bleak** и стек Bluetooth ОС. Процесс моста нужно запускать **нативно на машине с рабочим Bluetooth** (ноутбук, Raspberry Pi и т.д.). **Не запускайте BLE-мост в стандартном Docker-образе моста** — у контейнера обычно нет доступа к Bluetooth.
+
+**Home Assistant** и **Mosquitto** при этом могут быть в Docker (или установлены иначе), главное — чтобы **брокер MQTT был доступен** с хоста, где крутится мост. Типичная раскладка:
+
+| Компонент | Где работает |
+|-----------|----------------|
+| Mosquitto | Docker или пакет ОС (порт 1883 доступен с хоста моста) |
+| Home Assistant | Docker, HA OS и т.д. — интеграция MQTT на **тот же брокер** |
+| LovensePy `HAMqttBridge` | **На хосте** с `transport="ble"`, `pip install 'lovensepy[mqtt,ble]'` |
+
+### A) Docker Compose только HA + Mosquitto, мост на хосте (BLE)
+
+Из корня репозитория (Compose поднимает **только Mosquitto и Home Assistant**; мост всегда на хосте):
+
+```bash
+cp .env.example .env
+
+docker compose up -d
+```
+
+(Можно явно: `docker compose up -d mqtt homeassistant` — те же два сервиса.)
+
+Брокер проброшен на хост (по умолчанию `MQTT_PUBLISH_PORT=1883`). На **той же машине** ставим мост и указываем localhost:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install 'lovensepy[mqtt,ble]'
+
+export LOVENSE_TRANSPORT=ble
+export MQTT_HOST=127.0.0.1
+export MQTT_PORT=1883
+# опционально: LOVENSE_BLE_DISCOVER_TIMEOUT, LOVENSE_BLE_NAME_PREFIX, MQTT_TOPIC_PREFIX
+
+python -m lovensepy.services.mqtt_bridge
+```
+
+В Home Assistant добавьте интеграцию **MQTT**: **Настройки → Устройства и службы → Добавить интеграцию → MQTT** — брокер **`mqtt`**, порт **1883**, без TLS (как в `compose/mosquitto.conf`). HA и Mosquitto в одной Docker-сети; мост на хосте ходит в брокер через `127.0.0.1` на опубликованный порт.
+
+Если HA или брокер на **другой машине**, задайте `MQTT_HOST` как **LAN-IP брокера** (и откройте порт в файрволе), а не `127.0.0.1`.
+
+### B) Без Docker: брокер + HA + мост на одном ПК
+
+Поставьте Mosquitto и Home Assistant своим способом ([официальная установка HA](https://www.home-assistant.io/installation/)). Установите `lovensepy[mqtt,ble]`, выставьте `LOVENSE_TRANSPORT=ble` и `MQTT_HOST` на адрес брокера, запустите `python -m lovensepy.services.mqtt_bridge` (или `lovensepy-mqtt`). Дальше то же: один MQTT-брокер, интеграция MQTT в HA, мост публикует Discovery на этот брокер.
+
+### Bluetooth и доступ
+
+- **macOS:** разрешите **Bluetooth** для терминала/IDE, из которого запускаете Python (**Системные настройки → Конфиденциальность и безопасность → Bluetooth**).
+- **Linux:** часто нужна группа `bluetooth` и работающий BlueZ.
+- **Windows:** Bleak через WinRT; Bluetooth должен быть включён.
+
+### Lovense Remote и BLE
+
+У многих игрушек **одно BLE-подключение**. Если телефон с Remote уже держит BLE, мост с ПК может не подключиться — отключите игрушку в Remote или используйте **LAN** для моста.
+
+### Toy Events
+
+**Toy Events** (живые батарея/сила по WebSocket) относятся к **LAN**-режиму. В **BLE** Toy Events не используются; состояние обновляется опросом `get_toys` по интервалу refresh.
+
 ### Шаг 1: Переменные окружения
 
 **LAN (по умолчанию):**
@@ -31,19 +92,21 @@ export MQTT_HOST=192.168.1.2
 # опционально: LOVENSE_BLE_DISCOVER_TIMEOUT (сек, по умолчанию 15), LOVENSE_BLE_NAME_PREFIX (по умолчанию LVS-)
 ```
 
-### Шаг 2: Пример моста
+### Шаг 2: Запуск сервиса моста
 
 ```bash
-python examples/ha_mqtt_bridge.py
+python -m lovensepy.services.mqtt_bridge
 ```
+
+Эквивалент: `lovensepy-mqtt` после `pip install 'lovensepy[mqtt]'`. Файл `examples/ha_mqtt_bridge.py` — тонкая обёртка к той же точке входа.
 
 ### Шаг 3: Home Assistant
 
 В Home Assistant: **Settings** → **Devices & Services** → **MQTT**. Новые устройства должны появиться через MQTT discovery (управление поддерживаемыми моторами на игрушку, **Stop**, **Preset**, **Battery** и т.п.).
 
-### Шаг 4: Разрешение Toy Events
+### Шаг 4: Разрешение Toy Events (только LAN)
 
-Выдайте доступ Toy Events, когда Remote запросит (как в руководстве [События игрушек](toy-events.md#toy-events-tutorial)).
+Для **LAN** и при желании Toy Events выдайте доступ, когда Remote запросит (как в [События игрушек](toy-events.md#toy-events-tutorial)). В **BLE** Toy Events не используются.
 
 ## Раскладка топиков
 

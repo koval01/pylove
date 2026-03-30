@@ -1,0 +1,42 @@
+# Mosquitto + Home Assistant (BLE/LAN bridge runs on the host — see compose/README.md).
+#
+# 1. cp .env.example .env
+# 2. docker compose up -d
+# 3. http://localhost:8123 — add MQTT integration (broker: mqtt, port: 1883).
+#
+# Details: compose/README.md
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: lovensepy-mqtt
+    restart: unless-stopped
+    volumes:
+      - ./compose/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    ports:
+      - "${MQTT_PUBLISH_PORT:-1883}:1883"
+    networks:
+      - lovensepy-ha
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: lovensepy-homeassistant
+    restart: unless-stopped
+    volumes:
+      - ./compose/ha-config:/config
+    ports:
+      - "${HOME_ASSISTANT_PORT:-8123}:8123"
+    environment:
+      - TZ=${TZ:-UTC}
+    depends_on:
+      - mqtt
+    networks:
+      - lovensepy-ha
+
+networks:
+  lovensepy-ha:
+    name: lovensepy-ha
+
+volumes:
+  mosquitto-data:

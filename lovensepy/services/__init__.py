@@ -1,7 +1,8 @@
-"""Higher-level service adapters shipped with LovensePy (HTTP, …).
+"""Higher-level service adapters shipped with LovensePy (HTTP, MQTT bridge, …).
 
-The FastAPI LAN/BLE server lives in :mod:`lovensepy.services.fastapi`.
-Install optional extra: ``pip install 'lovensepy[service]'``.
+The FastAPI LAN/BLE server lives in :mod:`lovensepy.services.fastapi`
+(optional extra ``[service]``). The Home Assistant MQTT bridge CLI is
+:mod:`lovensepy.services.mqtt_bridge` (optional extra ``[mqtt]``, add ``[ble]`` for BLE).
 """
 
 from __future__ import annotations

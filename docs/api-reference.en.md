@@ -495,6 +495,8 @@ MQTT bridge for **Home Assistant** (MQTT Discovery). Commands go through :class:
 
 **Requires** `paho-mqtt` (`pip install 'lovensepy[mqtt]'`). BLE transport also needs `bleak` (`pip install 'lovensepy[ble]'`).
 
+**CLI service:** `python -m lovensepy.services.mqtt_bridge` or console script `lovensepy-mqtt` (environment variables; see :mod:`lovensepy.services.mqtt_bridge`).
+
 Import: `from lovensepy import HAMqttBridge` (lazy-loaded) or `from lovensepy.integrations.mqtt import HAMqttBridge`.
 
 #### Constructor

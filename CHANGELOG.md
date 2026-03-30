@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-03-30
+
+### Added
+
+- **Home Assistant MQTT bridge** as a packaged service: :mod:`lovensepy.services.mqtt_bridge`, runnable with
+  ``python -m lovensepy.services.mqtt_bridge`` or the **``lovensepy-mqtt``** console script (requires
+  ``pip install 'lovensepy[mqtt]'``; add ``[ble]`` for BLE transport).
+- **Docker Compose** layout at the repo root: **``compose/``** holds Mosquitto and Home Assistant config; see
+  ``compose/README.md``. ``docker-compose.yml`` runs **Mosquitto + Home Assistant** only (MQTT bridge runs on the host
+  for Bluetooth / typical LAN workflows).
+- Documentation: full **Home Assistant + BLE** walkthrough, MQTT troubleshooting (broker hostname ``mqtt`` vs
+  ``127.0.0.1`` inside Docker), and updated installation / API reference / appendix entries.
+
+### Changed
+
+- ``examples/ha_mqtt_bridge.py`` is a thin shim to the new service entrypoint (same pattern as ``examples/fastapi_lan_api.py``).
+- **Mosquitto** sample config listens on ``0.0.0.0:1883`` with ``protocol mqtt`` (Mosquitto 2.x-friendly).
+
 ## [1.1.3] - 2026-03-24
 
 ### Changed
@@ -149,7 +167,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Initial changelog entry for this release line; see Git history for earlier changes.
 
-[Unreleased]: https://github.com/koval01/lovensepy/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/koval01/lovensepy/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/koval01/lovensepy/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/koval01/lovensepy/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/koval01/lovensepy/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/koval01/lovensepy/compare/v1.1.0...v1.1.1

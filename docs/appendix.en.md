@@ -137,7 +137,7 @@ For local HTTPS (port 30011), lovensepy verifies the Lovense certificate fingerp
 | `examples/server_api.py` | Server API with token and uid |
 | `examples/socket_api_full.py` | Socket API with QR flow and command sending |
 | `examples/toy_events_full.py` | Toy Events — receive real-time events |
-| `examples/ha_mqtt_bridge.py` | Home Assistant MQTT bridge (Game Mode + broker) |
+| `lovensepy.services.mqtt_bridge` / `lovensepy-mqtt` | Home Assistant MQTT bridge service (Game Mode or BLE + broker); `examples/ha_mqtt_bridge.py` is a shim |
 | `examples/ble_direct_scan_and_two.py` | BLE CLI: scan (default **LVS-** names), interactive multiselect (`pick`), or `--no-tui` + numbers; pulse test; optional **`--wave`** sine sweeps per toy / dual motors / all together |
 | `examples/ble_direct_preset_multi.py` | Direct BLE: send the same **preset** (`pulse` / `wave` / …) to **any number** of toy addresses in parallel (`asyncio.gather`) — pass one address or many; for a **single hub object** use `BleDirectHub` (see [Direct BLE](direct-ble.md)) |
 | `examples/ble_direct_send_uart_once.py` | Direct BLE: connect to one toy, send a raw UART line once, and disconnect (diagnostics/manual commands) |

@@ -15,9 +15,13 @@ pip install lovensepy
 Optional extras:
 
 ```bash
-pip install 'lovensepy[mqtt]'   # Home Assistant / MQTT bridge (paho-mqtt)
+pip install 'lovensepy[mqtt]'   # Home Assistant MQTT bridge service + paho-mqtt; run: lovensepy-mqtt
 pip install 'lovensepy[ble]'    # Direct BLE (bleak, pick for examples)
 ```
+
+## Docker Compose: Mosquitto + Home Assistant
+
+The root `docker-compose.yml` starts **Mosquitto** and **Home Assistant** only. The LovensePy MQTT bridge runs **on the host** (BLE needs Bluetooth; LAN is simpler that way too). See [compose/README.md](compose/README.md) and [Home Assistant MQTT](docs/tutorials/home-assistant-mqtt.en.md#home-assistant-with-ble-full-setup).
 
 ## Minimal example (Game Mode)
 
